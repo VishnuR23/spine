@@ -10,8 +10,9 @@ help:
 	@echo "  make logs      Tail API and worker logs"
 	@echo ""
 	@echo "  make install   Install the package and dev tools into the active venv"
-	@echo "  make verify    Run every check (backend, hook, smoke, dashboard)"
+	@echo "  make verify    Run every check (backend, hook, C++, smoke, dashboard)"
 	@echo "  make test      Backend + hook tests"
+	@echo "  make test-cpp  Build and test the C++ SDK"
 	@echo "  make smoke     End-to-end smoke test (~30s, no API key needed)"
 	@echo ""
 
@@ -57,9 +58,14 @@ smoke:
 dashboard-check:
 	cd spine-dashboard && npx tsc --noEmit && npx vite build --outDir /tmp/spine-dashboard-build
 
+test-cpp:
+	cmake -S sdks/cpp -B sdks/cpp/build -DCMAKE_BUILD_TYPE=Release
+	cmake --build sdks/cpp/build -j4
+	./sdks/cpp/build/spine_tests
+
 test: test-backend test-hook
 
-verify: test-backend test-hook smoke dashboard-check
+verify: test-backend test-hook test-cpp smoke dashboard-check
 	@echo ""
 	@echo "All checks passed."
 

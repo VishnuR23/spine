@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- C++ SDK (`sdks/cpp`) for latency-sensitive callers, depending only on
+  libcurl and the standard library. Hard latency budget per call, fail-closed
+  by default, and `OrderGate` for pre-trade checks.
+- A finance policy pack and trading mandate
+  (`examples/finance/seed_finance_policies.py`): restricted list, notional
+  bands with four-eyes approval, trading-hours window, and market-data
+  entitlements, plus a runnable `pretrade_gate` example.
+- `make test-cpp`, and a CI job building and testing the C++ SDK.
+
 ### Changed
 
 - `pyproject.toml` is now the single source of dependencies. `requirements.txt`,

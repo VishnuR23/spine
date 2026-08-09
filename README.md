@@ -111,7 +111,51 @@ else:
 - **Claude Code** — drop-in `PreToolUse` hook: `cd integrations/claude-code-spine && ./install.sh`
 - **Python / LangGraph** — [`sdks/python`](sdks/python/), with a `guard_tool` decorator
 - **TypeScript** — [`sdks/ts`](sdks/ts/)
+- **C++** — [`sdks/cpp`](sdks/cpp/), for latency-sensitive systems. See below.
 - **Anything else** — one HTTP POST. See [docs/INTEGRATING_AGENTS.md](docs/INTEGRATING_AGENTS.md).
+
+### Trading systems: the C++ pre-trade gate
+
+Agents that place orders sit inside execution stacks written in C++, on a
+fixed deadline, where a control that stalls is worse than one that refuses.
+[`sdks/cpp`](sdks/cpp/) is a client built for that: libcurl and the standard
+library, a hard latency budget per call, and fail-closed by default.
+
+On top of it, `spine::finance::OrderGate` turns an order into an intercept:
+
+```cpp
+spine::finance::OrderGate gate(spine::Client(cfg), agent_id);
+gate.pre_open_check();                       // warm the path before the open
+
+const auto verdict = gate.check(order, session_id);
+if (!verdict.allowed) reject(order, verdict.reason);
+```
+
+The design problem worth reading the code for: Spine's policy engine matches
+strings, so it cannot express "block orders above ten million". The gate
+computes notional locally and picks an action type — `order.place`,
+`order.place.large`, `order.place.block` — while the policy governing each
+band stays on the server, where compliance can change it without rebuilding
+the trading system. Unpriced market orders get their own band rather than
+being treated as zero, which would make a market order the cheapest way past
+a limit.
+
+Restricted lists work the same way: the gate sends the symbol and holds no
+list of its own, because a restricted list changes intraday and a copy
+compiled into a binary is a copy that is wrong.
+
+A runnable pack of finance policies — restricted list, notional bands,
+four-eyes approval, trading-hours window, market-data entitlements — plus a
+declared trading mandate:
+
+```bash
+make demo
+python examples/finance/seed_finance_policies.py --always-open
+./sdks/cpp/build/pretrade_gate
+```
+
+Details, including measured latency and why a `/health` warm-up does *not*
+fix cold start, are in [`sdks/cpp/README.md`](sdks/cpp/README.md).
 
 ---
 

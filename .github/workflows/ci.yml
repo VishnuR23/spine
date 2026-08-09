@@ -88,6 +88,16 @@ jobs:
       - run: python examples/injection_isolation.py
       - run: python examples/audit_tamper_detection.py
 
+  cpp:
+    name: C++ SDK build and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libcurl4-openssl-dev
+      - run: cmake -S sdks/cpp -B sdks/cpp/build -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build sdks/cpp/build -j2
+      - run: ./sdks/cpp/build/spine_tests
+
   dashboard:
     name: Dashboard typecheck and build
     runs-on: ubuntu-latest
