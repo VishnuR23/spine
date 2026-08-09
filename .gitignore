@@ -35,3 +35,7 @@ spine-dashboard/vite.config.ts.timestamp-*.mjs
 .idea/
 .vscode/
 *.swp
+
+# Local AI-assistant session state. Handoff notes are working context, not
+# project documentation, and can reference things that are not public.
+.claude/
