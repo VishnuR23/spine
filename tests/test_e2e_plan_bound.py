@@ -88,6 +88,9 @@ def stack():
     try:
         yield client, SyncSessionLocal, AsyncSessionLocal
     finally:
+        client.close()
+        sync_engine.dispose()
+        asyncio.run(async_engine.dispose())
         for k, v in saved.items():
             setattr(settings, k, v)
         try:
