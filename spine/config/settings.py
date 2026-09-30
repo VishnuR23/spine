@@ -53,7 +53,7 @@ class Settings(BaseSettings):
 
     # Plan-bound reviewer LLM (optional; requires Redis + Celery worker)
     anthropic_api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
-    monitor_model: str = Field(default="claude-sonnet-4-20250514", validation_alias="MONITOR_MODEL")
+    monitor_model: str = Field(default="claude-sonnet-5-5", validation_alias="MONITOR_MODEL")
     redis_url: str = Field(default="redis://redis:6379/0", validation_alias="REDIS_URL")
     celery_broker_url: str = Field(default="", validation_alias="CELERY_BROKER_URL")
     # When an audit event was policy-blocked, skip the reviewer (it never ran).

@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   all, so `pip install spine` produced an installation that could not import.
 - The generated OpenAPI export moved from `openapi/openapi.json` to
   `docs/openapi.json`.
+- The plan reviewer's default model (`MONITOR_MODEL`) is now
+  `claude-sonnet-5-5`, replacing `claude-sonnet-4-20250514`.
 
 ### Fixed
 

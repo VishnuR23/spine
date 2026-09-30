@@ -136,7 +136,7 @@ plan supports the conclusion.
 | Env var | Default | Meaning |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | — | Required for the reviewer |
-| `MONITOR_MODEL` | `claude-sonnet-4-…` | Reviewer model |
+| `MONITOR_MODEL` | `claude-sonnet-5-5` | Reviewer model |
 | `PLAN_DRIFT_FLAG_THRESHOLD` | `0.4` | Opens an approval ticket |
 | `PLAN_DRIFT_BLOCK_THRESHOLD` | `0.6` | Hard-blocks the rest of the session |
 | `PLAN_EVAL_HISTORY_WINDOW` | `10` | Prior verdicts shown to the reviewer |

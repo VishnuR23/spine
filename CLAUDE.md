@@ -370,7 +370,7 @@ ADMIN_API_KEY              # platform admin (creates orgs); never weak in prod
 JWT_SECRET                 # signs dashboard user tokens; required in prod
 SESSION_SECRET             # BFF cookie signing (dashboard-side)
 ANTHROPIC_API_KEY          # required for the plan reviewer LLM
-MONITOR_MODEL              # plan reviewer model (default claude-sonnet-4-…)
+MONITOR_MODEL              # plan reviewer model (default claude-sonnet-5-5)
 
 # Toggles
 SSE_ENABLED=true           # live dashboard updates
