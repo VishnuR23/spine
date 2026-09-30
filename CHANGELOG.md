@@ -28,6 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/openapi.json`.
 - The plan reviewer's default model (`MONITOR_MODEL`) is now
   `claude-sonnet-5-5`, replacing `claude-sonnet-4-20250514`.
+- In production, the API now refuses to start when `JWT_SECRET` is shorter
+  than 32 bytes, the minimum for an HS256 key (RFC 7518 §3.2). Secrets from
+  `tools/init_env.py` already meet this.
 
 ### Fixed
 
@@ -44,6 +47,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   endpoint that no longer exists.
 - `ruff` was unpinned, so CI installed whichever release was newest and could
   fail with no change to the code.
+
+### Security
+
+- The `JWT_SECRET` placeholder in `deploy/vps/env.production.example` was not
+  on the rejected-secrets list, so a deployment that left it unedited started
+  normally with a publicly known signing key.
 
 ## [0.1.0] — 2026-08-06
 

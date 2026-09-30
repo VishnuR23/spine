@@ -52,7 +52,9 @@ are not surprises:
 ## Running Spine safely
 
 - Set `JWT_SECRET` and `ADMIN_API_KEY` to strong, distinct values. In
-  production the API refuses to start with defaults.
+  production the API refuses to start with defaults, or with a `JWT_SECRET`
+  shorter than 32 bytes. `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`
+  generates a suitable one.
 - Keep `BLOCK_WEBHOOK_PRIVATE_URLS=true`.
 - Serve behind TLS. The included Caddy configuration does this.
 - Org keys are shown once and stored only as a SHA-256 hash. If one leaks,
