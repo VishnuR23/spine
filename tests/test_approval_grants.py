@@ -34,7 +34,7 @@ def client():
 
     import asyncio
 
-    asyncio.get_event_loop().run_until_complete(init_models())
+    asyncio.run(init_models())
     return TestClient(app)
 
 
@@ -65,7 +65,7 @@ def test_approved_grant_allows_retry_after_flag(client: TestClient):
 
     import asyncio
 
-    asyncio.get_event_loop().run_until_complete(seed())
+    asyncio.run(seed())
 
     headers = {"X-Org-Key": raw_key}
     body = {

@@ -91,7 +91,7 @@ def auth_clients():
 
     import asyncio
 
-    asyncio.get_event_loop().run_until_complete(init_db())
+    asyncio.run(init_db())
     client = TestClient(app)
 
     def login(email: str, password: str) -> str:

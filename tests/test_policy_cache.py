@@ -32,7 +32,7 @@ def async_db():
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-    asyncio.get_event_loop().run_until_complete(init())
+    asyncio.run(init())
     try:
         yield SessionLocal
     finally:
@@ -72,7 +72,7 @@ def test_redis_less_falls_through_to_db(async_db):
             rows = await get_active_policies_for_intercept(s, org_id=org_id, agent_id=agent_id)
             return rows
 
-    rows = asyncio.get_event_loop().run_until_complete(go())
+    rows = asyncio.run(go())
     assert len(rows) == 1
     assert rows[0]["name"] == "p1"
     assert rows[0]["rule_config"] == {"effect": "allow", "action_types": ["read"]}
@@ -84,4 +84,4 @@ def test_invalidate_is_safe_when_redis_disabled(async_db):
     async def go():
         await invalidate(uuid.uuid4())
 
-    asyncio.get_event_loop().run_until_complete(go())  # no exception = pass
+    asyncio.run(go())  # no exception = pass

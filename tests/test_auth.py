@@ -32,7 +32,7 @@ def client():
 
     import asyncio
 
-    asyncio.get_event_loop().run_until_complete(_init(engine))
+    asyncio.run(_init(engine))
 
     return TestClient(app)
 
@@ -65,7 +65,7 @@ def seeded_client(client: TestClient):
 
     import asyncio
 
-    asyncio.get_event_loop().run_until_complete(seed())
+    asyncio.run(seed())
 
     return client, {"org_id": org_id, "user_id": user_id}
 

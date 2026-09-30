@@ -27,7 +27,7 @@ def _add_allow_read(client, org_id):
         )
         await session.commit()
 
-    asyncio.get_event_loop().run_until_complete(_seed())
+    asyncio.run(_seed())
 
 
 def _make_session(client, key, agent_id, goal="Refactor auth"):
@@ -117,7 +117,7 @@ def test_drift_gate_hard_blocks_when_threshold_crossed(client):
         )
         await session.commit()
 
-    asyncio.get_event_loop().run_until_complete(_bump())
+    asyncio.run(_bump())
 
     r = client.post(
         "/v1/intercept",
@@ -165,6 +165,6 @@ def test_audit_chain_verifies_with_and_without_session_id(client):
         session = await db_gen.__anext__()
         return await verify_org_chain(session, org_id=org_id)
 
-    res = asyncio.get_event_loop().run_until_complete(_verify())
+    res = asyncio.run(_verify())
     assert res.ok is True
     assert res.checked >= 2

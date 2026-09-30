@@ -82,7 +82,7 @@ def stack():
         async with async_engine.begin() as c:
             await c.run_sync(Base.metadata.create_all)
 
-    asyncio.get_event_loop().run_until_complete(init())
+    asyncio.run(init())
 
     client = TestClient(app)
     try:
@@ -116,7 +116,7 @@ def _seed(client) -> tuple[uuid.UUID, uuid.UUID, str]:
         )
         await s.commit()
 
-    asyncio.get_event_loop().run_until_complete(go())
+    asyncio.run(go())
     return org_id, agent_id, raw_key
 
 
@@ -312,7 +312,7 @@ def test_full_plan_bound_lifecycle(monkeypatch, stack):
         s = await db_gen.__anext__()
         return await verify_org_chain(s, org_id=org_id)
 
-    res = asyncio.get_event_loop().run_until_complete(_verify())
+    res = asyncio.run(_verify())
     assert res.ok is True
     # 4 intercepts + 4 plan.evaluation audit rows from the engine + 1 blocked intercept
     # + 1 attempted-after-end (404 doesn't write audit) ≈ 9 rows

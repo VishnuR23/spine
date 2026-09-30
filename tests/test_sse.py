@@ -55,7 +55,7 @@ def seeded_client():
 
     import asyncio
 
-    asyncio.get_event_loop().run_until_complete(init_db())
+    asyncio.run(init_db())
     client = TestClient(app)
 
     login = client.post("/v1/auth/login", json={"email": "sse@test.com", "password": "secret"})

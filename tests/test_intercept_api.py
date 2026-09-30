@@ -36,7 +36,7 @@ def client():
 
     import asyncio
 
-    asyncio.get_event_loop().run_until_complete(init_models())
+    asyncio.run(init_models())
 
     return TestClient(app)
 
@@ -64,7 +64,7 @@ def test_intercept_allowed(client: TestClient):
 
     import asyncio
 
-    asyncio.get_event_loop().run_until_complete(seed())
+    asyncio.run(seed())
 
     resp = client.post(
         "/v1/intercept",

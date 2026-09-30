@@ -41,7 +41,7 @@ def client():
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-    asyncio.get_event_loop().run_until_complete(init_models())
+    asyncio.run(init_models())
     c = TestClient(app)
     c._engine = engine  # type: ignore[attr-defined]
     c._SessionLocal = SessionLocal  # type: ignore[attr-defined]
@@ -67,5 +67,5 @@ def seed_org_and_agent(client: TestClient) -> tuple[uuid.UUID, uuid.UUID, str]:
         session.add(Agent(id=agent_id, org_id=org_id, name="a1", framework="generic"))
         await session.commit()
 
-    asyncio.get_event_loop().run_until_complete(_seed())
+    asyncio.run(_seed())
     return org_id, agent_id, raw_key
