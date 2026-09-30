@@ -57,3 +57,9 @@ def test_production_rejects_short_jwt_secret():
 
 def test_production_accepts_32_char_jwt_secret():
     _settings(environment="production", admin_api_key=STRONG_ADMIN, JWT_SECRET="x" * 32)
+
+
+def test_production_rejects_deploy_example_jwt_placeholder():
+    # The value shipped in deploy/vps/env.production.example.
+    with pytest.raises(ValidationError, match="JWT_SECRET must be set"):
+        _settings(environment="production", admin_api_key=STRONG_ADMIN, JWT_SECRET="REQUIRED_long_random_jwt_secret")

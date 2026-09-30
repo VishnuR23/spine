@@ -13,6 +13,7 @@ _WEAK_SECRETS = frozenset(
         "change-me-long-random-string",
         "REQUIRED_long_random_password",
         "REQUIRED_long_random_api_key",
+        "REQUIRED_long_random_jwt_secret",
         "REQUIRED_long_random_string",
     }
 )
