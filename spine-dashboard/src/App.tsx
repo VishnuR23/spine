@@ -1,4 +1,4 @@
-import { Navigate, Outlet, Route, Routes, useNavigate } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useNavigate } from "react-router";
 import { AppShell } from "@/components/AppShell";
 import { ApprovalPrompt } from "@/components/ApprovalPrompt";
 import { LiveActivityProvider } from "@/contexts/LiveActivityContext";

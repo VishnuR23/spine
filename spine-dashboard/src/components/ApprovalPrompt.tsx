@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { useLiveActivity } from "@/contexts/LiveActivityContext";
 import { Button } from "@/components/ui";
 

@@ -5,7 +5,7 @@
  * events. Row click → /sessions/:id detail.
  */
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 
 import { ApiError, spineFetch } from "@/api/client";
 import {

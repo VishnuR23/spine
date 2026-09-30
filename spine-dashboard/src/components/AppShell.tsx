@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink } from "react-router";
 import { sessionConfig } from "@/api/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLiveActivityOptional } from "@/contexts/LiveActivityContext";

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { spineFetch } from "@/api/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLiveActivity } from "@/contexts/LiveActivityContext";

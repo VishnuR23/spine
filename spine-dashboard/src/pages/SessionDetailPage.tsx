@@ -4,7 +4,7 @@
  * Live-appends new plan_evaluation SSE events for this session.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router";
 
 import { ApiError, spineFetch } from "@/api/client";
 import { DriftChart } from "@/components/DriftChart";
