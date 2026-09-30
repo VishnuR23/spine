@@ -36,6 +36,7 @@ def async_db():
     try:
         yield SessionLocal
     finally:
+        asyncio.run(engine.dispose())
         settings.database_url = saved_db
         settings.redis_url = saved_redis
 
