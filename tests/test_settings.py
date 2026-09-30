@@ -47,3 +47,13 @@ def test_production_rejects_placeholder_jwt_secret():
 def test_production_rejects_jwt_secret_equal_to_admin_key():
     with pytest.raises(ValidationError, match="should differ"):
         _settings(environment="production", admin_api_key=STRONG_ADMIN, JWT_SECRET=STRONG_ADMIN)
+
+
+def test_production_rejects_short_jwt_secret():
+    # RFC 7518 §3.2: an HS256 key must be at least 256 bits.
+    with pytest.raises(ValidationError, match="at least 32"):
+        _settings(environment="production", admin_api_key=STRONG_ADMIN, JWT_SECRET="x" * 31)
+
+
+def test_production_accepts_32_char_jwt_secret():
+    _settings(environment="production", admin_api_key=STRONG_ADMIN, JWT_SECRET="x" * 32)

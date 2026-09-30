@@ -94,6 +94,9 @@ class Settings(BaseSettings):
             problems.append("JWT_SECRET must be set separately from ADMIN_API_KEY in production")
         elif self.jwt_secret == self.admin_api_key:
             problems.append("JWT_SECRET should differ from ADMIN_API_KEY in production")
+        elif len(self.jwt_secret.encode()) < 32:
+            # HS256 keys shorter than the 256-bit hash output are brute-forceable (RFC 7518 §3.2).
+            problems.append("JWT_SECRET must be at least 32 bytes in production")
         if problems:
             joined = "; ".join(problems)
             raise ValueError(joined)
