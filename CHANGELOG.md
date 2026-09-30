@@ -53,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `JWT_SECRET` placeholder in `deploy/vps/env.production.example` was not
   on the rejected-secrets list, so a deployment that left it unedited started
   normally with a publicly known signing key.
+- Dashboard dependencies updated to clear every `npm audit` advisory:
+  `express` 4.22.3 (patched `qs`), `body-parser` 1.20.8, `react-router` 7.18
+  (replacing `react-router-dom` 6), and `vite` 6.4 for the dev server.
 
 ## [0.1.0] — 2026-08-06
 
