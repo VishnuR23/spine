@@ -71,7 +71,9 @@ def _call_reviewer(system_prompt: str, user_message: str) -> str:
     client = Anthropic(api_key=settings.anthropic_api_key)
     response = client.messages.create(
         model=settings.monitor_model,
-        max_tokens=1024,
+        # Current models think before answering, and thinking counts against
+        # max_tokens. A tight cap can use up the budget before the JSON verdict.
+        max_tokens=16000,
         system=system_prompt,
         messages=[{"role": "user", "content": user_message}],
     )
