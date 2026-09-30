@@ -33,6 +33,7 @@ def db():
         yield s
     finally:
         s.close()
+        engine.dispose()
         settings.sse_enabled = saved_sse
         settings.monitor_skip_if_policy_blocked = saved_skip
 
