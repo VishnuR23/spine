@@ -77,6 +77,14 @@ def _call_reviewer(system_prompt: str, user_message: str) -> str:
         system=system_prompt,
         messages=[{"role": "user", "content": user_message}],
     )
+    return _reviewer_text(response)
+
+
+def _reviewer_text(response) -> str:
+    # A declined or truncated turn has no complete verdict. Say why, rather
+    # than letting it surface later as a generic JSON parse failure.
+    if response.stop_reason in ("refusal", "max_tokens"):
+        raise ValueError(f"Reviewer returned no verdict (stop_reason={response.stop_reason})")
     text_blocks = [b.text for b in response.content if hasattr(b, "text") and b.text]
     return "\n".join(text_blocks)
 

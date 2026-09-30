@@ -206,3 +206,24 @@ def test_accumulated_drift_creates_approval_above_flag_threshold(monkeypatch, db
     assert ev.drift_score_after >= settings.plan_drift_flag_threshold
     # Should have created an approval ticket.
     assert ev.approval_id is not None
+
+
+def _fake_response(stop_reason: str, *texts: str):
+    from types import SimpleNamespace
+
+    blocks = [SimpleNamespace(type="text", text=t) for t in texts]
+    return SimpleNamespace(stop_reason=stop_reason, content=blocks)
+
+
+def test_reviewer_text_joins_text_blocks():
+    from spine.monitor.plan_engine import _reviewer_text
+
+    assert _reviewer_text(_fake_response("end_turn", '{"a":', " 1}")) == '{"a":\n 1}'
+
+
+@pytest.mark.parametrize("stop_reason", ["refusal", "max_tokens"])
+def test_reviewer_text_names_the_stop_reason(stop_reason):
+    from spine.monitor.plan_engine import _reviewer_text
+
+    with pytest.raises(ValueError, match=stop_reason):
+        _reviewer_text(_fake_response(stop_reason))
