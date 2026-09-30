@@ -139,7 +139,7 @@ The rule is fail-closed by default, fail-open only by explicit opt-in.
 |---|---|
 | Redis down | Policy reads fall through to Postgres; SSE stops; Celery tasks queue and drain on recovery. No data lost. |
 | Worker down | Intercepts continue. Plan evaluations queue up. |
-| Model returns garbage | Reviewer records a low-confidence aligned verdict rather than crashing the task. |
+| Model returns garbage, refuses, or errors | The task retries three times with backoff (1s, 2s, 4s), then gives up. No verdict is recorded and the session's drift score is unchanged, so that one action goes unreviewed. |
 | Spine unreachable | The Claude Code hook blocks the tool call rather than allowing it. |
 | No policy matches | Denied. There is no implicit allow. |
 | Webhook receiver slow | 2s timeout, does not block other deliveries or the hot path. |

@@ -460,9 +460,11 @@ moves fast. **Know which zone you're in before you decide how careful to be.**
 
 **Fail-closed by default, fail-open by explicit opt-in.** Every integration
 defaults to the safer behavior when something's wrong. The Claude Code hook
-fails closed if Spine is unreachable. The plan reviewer falls back to a
-low-confidence allow if the model returns garbage. The policy cache falls
-through to Postgres if Redis is down. **Preserve this discipline.** When you
+fails closed if Spine is unreachable. The policy cache falls through to
+Postgres if Redis is down. One known exception: if the plan reviewer's model
+call keeps failing (garbage, refusal, API error), the Celery task gives up
+after three retries and that action is left unreviewed — see "Failure
+behavior" in docs/ARCHITECTURE.md. **Preserve this discipline.** When you
 add a new external dependency or async path, the default behavior on failure
 must be the one that doesn't compromise the security claim.
 
