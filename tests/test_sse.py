@@ -20,7 +20,7 @@ from spine.schemas.events import SpineStreamEvent
 def seeded_client():
     settings.database_url = "sqlite+aiosqlite:///:memory:"
     settings.admin_api_key = "test-key"
-    settings.jwt_secret = "test-jwt-secret"
+    settings.jwt_secret = "test-jwt-secret-at-least-32-bytes!"
     settings.sse_enabled = True
     settings.sse_heartbeat_seconds = 1
 

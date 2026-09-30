@@ -17,7 +17,7 @@ from spine.models.user import Membership, User
 def client():
     settings.database_url = "sqlite+aiosqlite:///:memory:"
     settings.admin_api_key = "test-admin-key"
-    settings.jwt_secret = "test-jwt-secret-distinct"
+    settings.jwt_secret = "test-jwt-secret-distinct-32-bytes!"
     settings.environment = "local"
 
     engine = create_async_engine(settings.database_url)
