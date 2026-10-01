@@ -1,6 +1,10 @@
 # Architecture
 
-Spine sits between an agent and the systems it acts on. This document explains
+Spine sits between an agent and the systems it acts on. In the deployment it
+is built for, that is a trading agent and the order path: the C++
+`OrderGate` asks Spine before each order, amend, or cancel leaves the
+execution stack. Nothing below is specific to orders, though — an action is a
+type, a target, and metadata, whatever the agent does. This document explains
 how the pieces fit together and why they are arranged this way.
 
 ---

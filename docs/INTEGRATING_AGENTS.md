@@ -6,7 +6,9 @@ Spine is **middleware**: your agent must **call Spine before** doing anything se
 BEFORE side effect  →  POST /v1/intercept  →  if allowed, proceed; else stop
 ```
 
-Side effects include: reading/writing files, shell commands, HTTP calls, database queries, sending messages.
+Side effects include: placing, amending, or cancelling orders; reading licensed market data; reading/writing files, shell commands, HTTP calls, database queries, sending messages.
+
+**Trading systems:** use the C++ pre-trade gate in [`sdks/cpp`](../sdks/cpp/). It sizes each order, picks the action type (`order.place`, `.large`, `.block`, `order.amend*`, `order.cancel`), enforces a hard latency budget, and fails closed — except for cancels, which go through if Spine cannot answer. The rest of this page covers other agent runtimes.
 
 ---
 
