@@ -85,3 +85,35 @@ def test_plan_drift_dispatch_signs_and_filters(db):
     expected = hmac.new(bytes.fromhex(HMAC_KEY), post["content"], hashlib.sha256).hexdigest()
     assert post["headers"]["X-Spine-Signature"] == f"v1={expected}"
     assert json.loads(post["content"])["drift_score"] == 0.5
+
+
+@pytest.mark.parametrize(
+    "events, expected",
+    [
+        (None, True),
+        ([], True),
+        (["decision:*"], True),
+        (["spine.plan.review_failed"], True),
+        (["plan.review_failed"], True),
+        (["decision:plan_review_failed"], True),
+        (["spine.plan.drift"], False),
+        (["decision:blocked"], False),
+    ],
+)
+def test_plan_review_failed_filter(events, expected):
+    from spine.core.webhook_dispatch import _should_send_plan_review_failed
+
+    assert _should_send_plan_review_failed(events) is expected
+
+
+def test_plan_review_failed_dispatch_uses_its_own_event_header(db):
+    from spine.core.webhook_dispatch import dispatch_plan_review_failed_event_sync
+
+    org_id = uuid.uuid4()
+    _add_hook(db, org_id, url="https://example.com/all")
+    _add_hook(db, org_id, url="https://example.com/drift-only", events=["spine.plan.drift"])
+
+    dispatch_plan_review_failed_event_sync(db, org_id=org_id, payload={"event": "spine.plan.review_failed"})
+
+    assert [p["url"] for p in _RecordingClient.posts] == ["https://example.com/all"]
+    assert _RecordingClient.posts[0]["headers"]["X-Spine-Event"] == "spine.plan.review_failed"
