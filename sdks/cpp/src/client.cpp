@@ -19,6 +19,15 @@ const char* to_string(Decision d) {
     return "blocked";
 }
 
+const char* to_string(BreakerState s) {
+    switch (s) {
+        case BreakerState::Open: return "open";
+        case BreakerState::HalfOpen: return "half-open";
+        case BreakerState::Closed: break;
+    }
+    return "closed";
+}
+
 namespace detail {
 
 std::string json_escape(const std::string& raw) {
@@ -192,9 +201,32 @@ void ensure_curl_initialised() {
     (void)once;
 }
 
+using Clock = std::chrono::steady_clock;
+
+Result local_verdict(bool allow, std::string reason, Clock::time_point started) {
+    Result r;
+    r.allowed = allow;
+    r.decision = allow ? Decision::Allowed : Decision::Blocked;
+    r.reason = std::move(reason);
+    r.failed_closed = true;
+    r.latency = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - started);
+    return r;
+}
+
+void notify(const Config& c, BreakerState s) {
+    if (!c.on_breaker_change) return;
+    try {
+        c.on_breaker_change(s);
+    } catch (...) {
+        // Never throw on the order path, including from user code.
+    }
+}
+
 }  // namespace
 
 namespace detail {
+
+using Clock = std::chrono::steady_clock;
 
 struct Shared {
     explicit Shared(bool reuse_connections) : reuse(reuse_connections) {
@@ -249,6 +281,57 @@ struct Shared {
         }
     }
 
+    enum class Admission { Pass, Probe, ShortCircuit };
+
+    Admission admit(const Config& c, bool* changed) {
+        *changed = false;
+        if (c.breaker_threshold <= 0) return Admission::Pass;
+        std::lock_guard<std::mutex> g(breaker_mu);
+        switch (state) {
+            case BreakerState::Closed:
+                return Admission::Pass;
+            case BreakerState::Open:
+                if (Clock::now() - opened_at >= c.breaker_cooldown) {
+                    state = BreakerState::HalfOpen;
+                    *changed = true;
+                    return Admission::Probe;
+                }
+                return Admission::ShortCircuit;
+            case BreakerState::HalfOpen:
+                break;
+        }
+        return Admission::ShortCircuit;  // a probe is already in flight
+    }
+
+    // Returns true and sets *now if the state changed.
+    bool settle(const Config& c, bool local, bool probe, BreakerState* now) {
+        if (c.breaker_threshold <= 0) return false;
+        std::lock_guard<std::mutex> g(breaker_mu);
+        const BreakerState before = state;
+        if (!local) {
+            failures = 0;
+            state = BreakerState::Closed;
+        } else {
+            ++failures;
+            if (probe || (state == BreakerState::Closed && failures >= c.breaker_threshold)) {
+                state = BreakerState::Open;
+                opened_at = Clock::now();
+            }
+        }
+        *now = state;
+        return state != before;
+    }
+
+    BreakerState breaker() {
+        std::lock_guard<std::mutex> g(breaker_mu);
+        return state;
+    }
+
+    std::mutex breaker_mu;
+    BreakerState state = BreakerState::Closed;
+    int failures = 0;
+    Clock::time_point opened_at{};
+
     const bool reuse;
     std::mutex pool_mu;
     std::vector<CURL*> pool;
@@ -278,12 +361,33 @@ Result Client::intercept(const Action& action) const {
 
 Result Client::intercept_with_budget(const Action& action,
                                      std::chrono::milliseconds budget) const {
+    const auto started = Clock::now();
+
+    bool changed = false;
+    const auto admission = shared_->admit(config_, &changed);
+    if (changed) notify(config_, BreakerState::HalfOpen);
+    if (admission == detail::Shared::Admission::ShortCircuit) {
+        Result r = local_verdict(config_.fail_open, "circuit open", started);
+        ++shared_->short_circuited_n;
+        shared_->count(r);
+        return r;
+    }
+
     Result r = perform(action, budget);
+
+    BreakerState now = BreakerState::Closed;
+    if (shared_->settle(config_, r.failed_closed,
+                        admission == detail::Shared::Admission::Probe, &now)) {
+        notify(config_, now);
+    }
+
     if (r.failed_closed) ++shared_->failed_closed_n;
     shared_->observe(r.latency);
     shared_->count(r);
     return r;
 }
+
+BreakerState Client::breaker_state() const { return shared_->breaker(); }
 
 Stats Client::stats() const {
     Stats s;

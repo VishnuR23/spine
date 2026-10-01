@@ -137,6 +137,105 @@ void test_stats_are_exact_under_concurrency() {
     check(server.connections() <= 8, "the pool never needs more connections than threads");
 }
 
+void test_breaker_trips_short_circuits_and_recovers() {
+    FakeSpine server;
+    server.respond(500, "{}");
+    spine::Config cfg = config_for(server);
+    cfg.breaker_threshold = 3;
+    cfg.breaker_cooldown = std::chrono::milliseconds(100);
+    std::vector<spine::BreakerState> seen;
+    cfg.on_breaker_change = [&seen](spine::BreakerState s) { seen.push_back(s); };
+    const spine::Client client(cfg);
+
+    for (int i = 0; i < 3; ++i) client.intercept(read_action());
+    check(client.breaker_state() == spine::BreakerState::Open, "three failures in a row open the breaker");
+    check(server.requests() == 3, "the failures did reach the server");
+
+    const auto refused = client.intercept(read_action());
+    check(!refused.allowed && refused.failed_closed, "an open breaker refuses locally");
+    check_eq(refused.reason, "circuit open", "with a clear reason");
+    check(server.requests() == 3, "and makes no network call");
+    check(client.stats().short_circuited == 1, "the refusal counts as short-circuited");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    server.respond(200, spine_test::kAllowed);
+    const auto probe = client.intercept(read_action());
+    check(probe.allowed && !probe.failed_closed, "after the cooldown, a probe reaches Spine");
+    check(client.breaker_state() == spine::BreakerState::Closed, "a real verdict closes the breaker");
+    check(seen.size() == 3 && seen[0] == spine::BreakerState::Open &&
+              seen[1] == spine::BreakerState::HalfOpen && seen[2] == spine::BreakerState::Closed,
+          "the callback saw Open, HalfOpen, Closed");
+}
+
+void test_failed_probe_reopens() {
+    FakeSpine server;
+    server.respond(500, "{}");
+    spine::Config cfg = config_for(server);
+    cfg.breaker_threshold = 1;
+    cfg.breaker_cooldown = std::chrono::milliseconds(50);
+    const spine::Client client(cfg);
+    client.intercept(read_action());
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    client.intercept(read_action());  // the probe, still failing
+    check(client.breaker_state() == spine::BreakerState::Open, "a failed probe re-opens the breaker");
+    check(server.requests() == 2, "exactly one probe was sent");
+}
+
+void test_success_resets_the_failure_count() {
+    FakeSpine server;
+    spine::Config cfg = config_for(server);
+    cfg.breaker_threshold = 2;
+    const spine::Client client(cfg);
+    server.respond(500, "{}");
+    client.intercept(read_action());
+    server.respond(200, spine_test::kAllowed);
+    client.intercept(read_action());
+    server.respond(500, "{}");
+    client.intercept(read_action());
+    check(client.breaker_state() == spine::BreakerState::Closed,
+          "failures separated by a real verdict do not trip the breaker");
+}
+
+void test_open_breaker_honours_fail_open() {
+    FakeSpine server;
+    server.respond(500, "{}");
+    spine::Config cfg = config_for(server);
+    cfg.breaker_threshold = 1;
+    cfg.fail_open = true;
+    const spine::Client client(cfg);
+    client.intercept(read_action());
+    const auto r = client.intercept(read_action());
+    check(r.allowed && r.failed_closed, "with fail_open, an open breaker allows locally");
+}
+
+void test_threshold_zero_disables_the_breaker() {
+    FakeSpine server;
+    server.respond(500, "{}");
+    spine::Config cfg = config_for(server);
+    cfg.breaker_threshold = 0;
+    const spine::Client client(cfg);
+    for (int i = 0; i < 10; ++i) client.intercept(read_action());
+    check(client.breaker_state() == spine::BreakerState::Closed, "threshold 0 never trips");
+    check(server.requests() == 10, "every call still goes to Spine");
+}
+
+void test_throwing_callback_is_contained() {
+    FakeSpine server;
+    server.respond(500, "{}");
+    spine::Config cfg = config_for(server);
+    cfg.breaker_threshold = 1;
+    cfg.on_breaker_change = [](spine::BreakerState) { throw 42; };
+    const spine::Client client(cfg);
+    bool threw = false;
+    try {
+        client.intercept(read_action());
+    } catch (...) {
+        threw = true;
+    }
+    check(!threw, "a callback that throws does not escape intercept()");
+    check(client.breaker_state() == spine::BreakerState::Open, "and the breaker still tripped");
+}
+
 }  // namespace
 
 void run_transport_tests() {
@@ -148,4 +247,10 @@ void run_transport_tests() {
     test_timeout_then_recovery();
     test_stats_count_decisions_and_latency();
     test_stats_are_exact_under_concurrency();
+    test_breaker_trips_short_circuits_and_recovers();
+    test_failed_probe_reopens();
+    test_success_resets_the_failure_count();
+    test_open_breaker_honours_fail_open();
+    test_threshold_zero_disables_the_breaker();
+    test_throwing_callback_is_contained();
 }

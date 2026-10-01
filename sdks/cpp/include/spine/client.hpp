@@ -27,6 +27,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -58,6 +59,14 @@ struct Result {
     // Round-trip time actually observed, for your own latency histograms.
     std::chrono::microseconds latency{0};
 };
+
+enum class BreakerState {
+    Closed,    // normal: every call goes to Spine
+    Open,      // Spine keeps failing: answer locally, no network call
+    HalfOpen,  // cooldown over: one probe is in flight
+};
+
+const char* to_string(BreakerState s);
 
 // In-process counters, read with Client::stats(). Cheap enough to leave on.
 struct Stats {
@@ -100,6 +109,18 @@ struct Config {
     // per order. Copies of a Client share one pool. Turn off only if your
     // network drops idle connections in ways libcurl cannot detect.
     bool reuse_connections = true;
+
+    // Consecutive locally-produced verdicts that open the circuit breaker.
+    // While open, calls are answered locally at once instead of each one
+    // waiting out the timeout. 0 disables the breaker.
+    int breaker_threshold = 5;
+
+    // How long the breaker stays open before one probe is let through.
+    std::chrono::milliseconds breaker_cooldown{5000};
+
+    // Optional. Called on the calling thread after each breaker transition;
+    // wire it to your alerting. Exceptions it throws are swallowed.
+    std::function<void(BreakerState)> on_breaker_change;
 };
 
 // One action an agent wants to take. Deliberately flat: everything Spine
@@ -148,6 +169,7 @@ public:
     const Config& config() const { return config_; }
 
     Stats stats() const;
+    BreakerState breaker_state() const;
 
 private:
     Result perform(const Action& action, std::chrono::milliseconds budget) const;
