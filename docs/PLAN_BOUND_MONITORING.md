@@ -1,9 +1,11 @@
 # Plan-bound monitoring
 
-A policy engine can tell you an action is forbidden. It cannot tell you an
-agent has quietly stopped doing what it was asked to do, because each
-individual step is permitted. Plan-bound monitoring is Spine's answer to that:
-the agent declares a plan up front, and every action is scored against it.
+A pre-trade policy can tell you an order is forbidden. It cannot tell you a
+trading agent has quietly stopped trading the strategy it was given, because
+each individual order is permitted. Plan-bound monitoring is Spine's answer to
+that: the agent declares its mandate up front, and every order is scored
+against it. (The mechanism is general — "plan" and "mandate" are the same
+thing, and it works for any agent action, not only orders.)
 
 The design constraint that shapes everything else: **the reviewer must not read
 anything the agent could have influenced.**
@@ -40,10 +42,10 @@ X-Org-Key: spine_...
 
 {
   "agent_id": "…",
-  "goal": "Refactor the authentication module to use JWT instead of session cookies",
-  "constraints": ["only touch /src/auth/**", "no schema changes", "no external network calls"],
-  "expected_resources": ["/src/auth/*.ts", "/tests/auth/*.test.ts"],
-  "success_criteria": "all auth tests pass, no other tests break"
+  "goal": "Rebalance the US equity book toward the published target weights",
+  "constraints": ["only trade names already held in the book", "no trading outside regular US equity hours"],
+  "expected_resources": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL"],
+  "success_criteria": "book weights within 50bps of target, no restricted names touched"
 }
 ```
 
@@ -100,34 +102,36 @@ agent can retry without the whole session being re-litigated.
 
 ## What it catches that a policy engine does not
 
-**Injection-induced drift.** A poisoned file tells the agent to back up `.env`
-first. The agent complies. The plan says refactor auth; reading
-`/etc/secrets/.env` does not fit, and the reviewer says so — without ever
-seeing the poisoned file.
+**Injection-induced drift.** A poisoned research note tells the agent to take
+a position in a small-cap name first. The agent complies. The mandate says
+rebalance names already held; an order in a name outside the book does not
+fit, and the reviewer says so — without ever seeing the poisoned note.
 
-**Scope creep.** Plan says summarize last week's email. The agent starts
-reading Slack, then hitting external APIs. No single read is forbidden.
+**Scope creep.** The mandate says rebalance US equities. The agent starts
+trading the same names' options, then FX. No single order is forbidden.
 
-**Cumulative damage.** Plan says clean up `/tmp`. The agent issues five
-thousand deletes across the filesystem. Each `rm` is individually legal.
+**Cumulative damage.** The mandate says trim NVDA toward target. The agent
+sells in four hundred small orders until the position is gone. Each order is
+below the review threshold and individually legal.
 
-**Goal subversion.** Plan says review this pull request. The agent's actions
-trend toward approving and merging it. Each step looks reasonable; the
-direction does not.
+**Goal subversion.** The mandate says reduce concentration. The agent's
+orders trend toward adding to the largest position. Each order looks
+reasonable; the direction does not.
 
-**Cascading multi-agent failure.** Agent A produces a wrong claim, B builds on
-it, C acts on B. Every action is legal under static policy, and nothing in the
-plan supports the conclusion.
+**Cascading multi-agent failure.** A research agent produces a wrong signal,
+a second agent builds a trade on it, a third executes. Every order is legal
+under static policy, and nothing in the mandate supports the conclusion.
 
 ---
 
 ## What it does not catch
 
-- **Anything inside an allowed action.** If the plan permits writing to
-  `/src/auth/`, the reviewer sees "write to /src/auth/login.ts" and approves.
-  It does not read what was written.
-- **The action that triggers the verdict.** Review is asynchronous;
-  enforcement lands on the session's next action.
+- **Anything inside an allowed action.** The reviewer sees an order's action
+  type and symbol — "order.place AAPL" — and nothing else. It does not see
+  quantity, price, or side, so it cannot judge size: that is what the
+  notional bands in pre-trade policy are for.
+- **The order that triggers the verdict.** Review is asynchronous;
+  enforcement lands on the session's next order.
 - **A dishonest plan.** Spine governs the agent against the declared plan. A
   plan that authorizes the damage authorizes the damage.
 - **Agents that never open a session.** Review is opt-in per session by
