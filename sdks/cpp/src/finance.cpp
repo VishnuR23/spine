@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <utility>
+#include <vector>
 
 namespace spine {
 namespace finance {
@@ -60,6 +61,35 @@ std::string format_number(double v) {
     return std::string(buf);
 }
 
+using Metadata = std::vector<std::pair<std::string, std::string>>;
+
+// Everything here lands verbatim in the hash-chained audit log, which is the
+// point: this is the record of what was asked and on whose behalf.
+//
+// For the same reason, keep it to trade facts. No client identifiers, no
+// research or rationale text, nothing that would turn the audit trail into a
+// store of material non-public information or personal data. Spine redacts
+// common secret shapes on the way through, but that is a safety net, not a
+// licence to send them.
+Metadata order_metadata(const Order& o, const NotionalBands& bands) {
+    const Pricing pricing = pricing_of(o);
+    Metadata md = {
+        {"side", to_string(o.side)},
+        {"quantity", std::to_string(o.quantity)},
+        {"limit_price", format_number(o.limit_price)},
+        {"notional", format_number(notional(o, bands))},
+        {"pricing", to_string(pricing)},
+        {"venue", o.venue},
+        {"strategy_id", o.strategy_id},
+        {"trader_id", o.trader_id},
+        {"client_order_id", o.client_order_id},
+    };
+    if (pricing == Pricing::Reference) {
+        md.emplace_back("reference_price", format_number(o.reference_price));
+    }
+    return md;
+}
+
 }  // namespace
 
 OrderGate::OrderGate(Client client, std::string agent_id, NotionalBands bands)
@@ -73,25 +103,21 @@ Result OrderGate::check(const Order& order, const std::string& session_id) const
     action.action_type = action_type_for(order, bands_);
     action.target_resource = order.symbol;
     action.session_id = session_id;
+    action.metadata = order_metadata(order, bands_);
+    return client_.intercept(action);
+}
 
-    // Everything here lands verbatim in the hash-chained audit log, which is
-    // the point: this is the record of what was asked and on whose behalf.
-    //
-    // For the same reason, keep it to trade facts. No client identifiers, no
-    // research or rationale text, nothing that would turn the audit trail
-    // into a store of material non-public information or personal data.
-    // Spine redacts common secret shapes on the way through, but that is a
-    // safety net, not a licence to send them.
-    action.metadata = {
-        {"side", to_string(order.side)},
-        {"quantity", std::to_string(order.quantity)},
-        {"limit_price", format_number(order.limit_price)},
-        {"notional", format_number(notional(order))},
-        {"venue", order.venue},
-        {"strategy_id", order.strategy_id},
-        {"trader_id", order.trader_id},
-    };
-
+Result OrderGate::check_amend(const Order& original, const Order& amended,
+                              const std::string& session_id) const {
+    Action action;
+    action.agent_id = agent_id_;
+    action.action_type = action_type_for("order.amend", amended, bands_);
+    action.target_resource = amended.symbol;
+    action.session_id = session_id;
+    action.metadata = order_metadata(amended, bands_);
+    action.metadata.emplace_back("prev_quantity", std::to_string(original.quantity));
+    action.metadata.emplace_back("prev_limit_price", format_number(original.limit_price));
+    action.metadata.emplace_back("prev_notional", format_number(notional(original, bands_)));
     return client_.intercept(action);
 }
 

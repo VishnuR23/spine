@@ -111,6 +111,12 @@ public:
     // strategy while every individual order remains permitted.
     Result check(const Order& order, const std::string& session_id = "") const;
 
+    // An amend is a new risk decision at the new size, so it is banded on
+    // the amended order's notional: order.amend, .large, .block, .unpriced.
+    // The previous size and price travel with it for the audit trail.
+    Result check_amend(const Order& original, const Order& amended,
+                       const std::string& session_id = "") const;
+
     // Market data carries licensing obligations that differ per feed, and
     // entitlement is exactly the kind of rule that belongs in central policy
     // rather than in each consumer.
@@ -131,6 +137,9 @@ public:
         std::chrono::milliseconds budget = std::chrono::milliseconds(2000)) const;
 
     const NotionalBands& bands() const { return bands_; }
+
+    // The underlying client, for stats(), breaker_state(), and halt().
+    const Client& client() const { return client_; }
 
 private:
     Client client_;
