@@ -164,9 +164,10 @@ def evaluate_plan_alignment(
         spine_plan_eval_duration_seconds.observe(time.perf_counter() - t0)
 
 
-def _evaluate_plan_alignment_inner(
+def _load_reviewable(
     db: DbSession, *, audit_event_id: uuid.UUID, session_id: uuid.UUID
-) -> PlanEvaluation | None:
+) -> tuple[Session, AuditEvent] | None:
+    """Return (session, audit_event) if this pair should be reviewed, else None."""
     sess = db.get(Session, session_id)
     if sess is None or sess.status != "active":
         return None
@@ -179,6 +180,16 @@ def _evaluate_plan_alignment_inner(
     # calls and avoids confusing drift signal.
     if audit.policy_decision == "blocked" and settings.monitor_skip_if_policy_blocked:
         return None
+    return sess, audit
+
+
+def _evaluate_plan_alignment_inner(
+    db: DbSession, *, audit_event_id: uuid.UUID, session_id: uuid.UUID
+) -> PlanEvaluation | None:
+    loaded = _load_reviewable(db, audit_event_id=audit_event_id, session_id=session_id)
+    if loaded is None:
+        return None
+    sess, audit = loaded
 
     # Idempotency: if a verdict already exists for this pair, return it.
     existing = db.execute(
