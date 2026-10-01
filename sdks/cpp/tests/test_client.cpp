@@ -10,29 +10,12 @@
 
 #include "spine/client.hpp"
 #include "spine/finance.hpp"
+#include "check.hpp"
 
 namespace {
 
-int g_failures = 0;
-int g_checks = 0;
-
-void check(bool condition, const char* what) {
-    ++g_checks;
-    if (!condition) {
-        ++g_failures;
-        std::printf("  FAIL  %s\n", what);
-    }
-}
-
-void check_eq(const std::string& actual, const std::string& expected,
-              const char* what) {
-    ++g_checks;
-    if (actual != expected) {
-        ++g_failures;
-        std::printf("  FAIL  %s\n        expected: %s\n        actual:   %s\n",
-                    what, expected.c_str(), actual.c_str());
-    }
-}
+using spine_test::check;
+using spine_test::check_eq;
 
 // ---------------------------------------------------------------------------
 
@@ -175,16 +158,20 @@ void test_fail_open_is_available_but_explicit() {
 
 }  // namespace
 
-int main() {
-    std::printf("\nspine C++ client tests\n\n");
-
+void run_client_tests() {
     test_json_escaping();
     test_body_construction();
     test_response_parsing();
     test_notional_and_banding();
     test_fails_closed_when_spine_is_unreachable();
     test_fail_open_is_available_but_explicit();
+}
 
-    std::printf("\n  %d checks, %d failures\n\n", g_checks, g_failures);
-    return g_failures == 0 ? 0 : 1;
+int main() {
+    std::printf("\nspine C++ client tests\n\n");
+    run_client_tests();
+    run_transport_tests();
+    run_lifecycle_tests();
+    std::printf("\n  %d checks, %d failures\n\n", spine_test::g_checks, spine_test::g_failures);
+    return spine_test::g_failures == 0 ? 0 : 1;
 }

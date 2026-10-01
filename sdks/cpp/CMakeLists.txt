@@ -9,6 +9,7 @@ option(SPINE_BUILD_TESTS "Build the test binary" ON)
 option(SPINE_BUILD_EXAMPLES "Build the example binaries" ON)
 
 find_package(CURL REQUIRED)
+find_package(Threads REQUIRED)
 
 add_library(spine_client
     src/client.cpp
@@ -20,7 +21,7 @@ target_include_directories(spine_client PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(spine_client PUBLIC CURL::libcurl)
+target_link_libraries(spine_client PUBLIC CURL::libcurl Threads::Threads)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(spine_client PRIVATE -Wall -Wextra -Wpedantic)
@@ -28,8 +29,12 @@ endif()
 
 if(SPINE_BUILD_TESTS)
     enable_testing()
-    add_executable(spine_tests tests/test_client.cpp)
-    target_link_libraries(spine_tests PRIVATE spine_client)
+    add_executable(spine_tests
+        tests/test_client.cpp
+        tests/test_transport.cpp
+        tests/test_lifecycle.cpp
+    )
+    target_link_libraries(spine_tests PRIVATE spine_client Threads::Threads)
     add_test(NAME spine_tests COMMAND spine_tests)
 endif()
 
