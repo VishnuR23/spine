@@ -313,3 +313,30 @@ def test_failed_review_skipped_for_policy_blocked_event(db):
 
     assert flag_failed_review(db, audit_event_id=audit.id, session_id=sess_id, error_type="ValueError") is None
     assert db.query(Approval).count() == 0
+
+
+def test_failed_review_fires_the_review_failed_webhook_once(monkeypatch, db):
+    from spine.monitor.plan_engine import flag_failed_review
+
+    sent = []
+    monkeypatch.setattr(
+        "spine.core.webhook_dispatch.dispatch_plan_review_failed_event_sync",
+        lambda _db, *, org_id, payload: sent.append((org_id, payload)),
+    )
+    org_id, agent_id, sess_id = _seed(db)
+    audit = _add_audit(db, org_id=org_id, agent_id=agent_id, session_id=sess_id)
+
+    approval_id = flag_failed_review(db, audit_event_id=audit.id, session_id=sess_id, error_type="ValueError")
+    flag_failed_review(db, audit_event_id=audit.id, session_id=sess_id, error_type="ValueError")
+
+    assert len(sent) == 1
+    sent_org, payload = sent[0]
+    assert sent_org == org_id
+    assert payload["event"] == "spine.plan.review_failed"
+    assert payload["session_id"] == str(sess_id)
+    assert payload["agent_id"] == str(agent_id)
+    assert payload["audit_event_id"] == str(audit.id)
+    assert payload["approval_id"] == str(approval_id)
+    assert payload["error_type"] == "ValueError"
+    assert payload["action"] == {"action_type": "read", "target_resource": "/x"}
+    assert "timestamp" in payload

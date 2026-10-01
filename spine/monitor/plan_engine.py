@@ -431,7 +431,26 @@ def flag_failed_review(
     db.commit()
 
     from spine.core.event_bus import approval_payload, publish_event_sync
+    from spine.core.webhook_dispatch import dispatch_plan_review_failed_event_sync
 
+    dispatch_plan_review_failed_event_sync(
+        db,
+        org_id=sess.org_id,
+        payload={
+            "event": "spine.plan.review_failed",
+            "session_id": str(session_id),
+            "agent_id": str(sess.agent_id),
+            "org_id": str(sess.org_id),
+            "audit_event_id": str(audit_event_id),
+            "action": {
+                "action_type": audit.action_type,
+                "target_resource": audit.target_resource,
+            },
+            "error_type": error_type,
+            "approval_id": str(approval.id),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
     publish_event_sync(
         sess.org_id,
         "approval",
