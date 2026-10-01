@@ -357,3 +357,93 @@ def _evaluate_plan_alignment_inner(
         )
 
     return evaluation
+
+
+def flag_failed_review(
+    db: DbSession, *, audit_event_id: uuid.UUID, session_id: uuid.UUID, error_type: str
+) -> uuid.UUID | None:
+    """Fail closed when the reviewer could not produce a verdict.
+
+    Called by the worker once retries are exhausted. Opens a pending approval
+    so a human looks at the action, and records the failure in the audit
+    chain. The drift score is left alone: there is no verdict to fold in.
+
+    ``error_type`` should be an exception class name, never its message --
+    messages can echo model output, and the audit metadata is permanent.
+
+    Returns the approval id, or None if the pair was not reviewable or a
+    verdict already exists.
+    """
+    loaded = _load_reviewable(db, audit_event_id=audit_event_id, session_id=session_id)
+    if loaded is None:
+        return None
+    sess, audit = loaded
+
+    has_verdict = db.execute(
+        sa.select(PlanEvaluation.id)
+        .where(PlanEvaluation.session_id == session_id)
+        .where(PlanEvaluation.audit_event_id == audit_event_id)
+        .limit(1)
+    ).scalar_one_or_none()
+    if has_verdict is not None:
+        return None
+
+    # A pending approval already puts this action in front of a human.
+    existing_approval = db.execute(
+        sa.select(Approval.id)
+        .where(Approval.audit_event_id == audit_event_id)
+        .where(Approval.status == "pending")
+        .limit(1)
+    ).scalar_one_or_none()
+    if existing_approval is not None:
+        return existing_approval
+
+    approval = Approval(
+        org_id=sess.org_id,
+        agent_id=sess.agent_id,
+        proposed=_build_approval_proposed(
+            agent_id=sess.agent_id,
+            audit=audit,
+            alignment="unreviewed",
+            origin="plan_review_failed",
+        ),
+        status="pending",
+        audit_event_id=audit_event_id,
+    )
+    db.add(approval)
+    db.flush()
+
+    log_event_sync(
+        db,
+        agent_id=sess.agent_id,
+        org_id=sess.org_id,
+        action_type="plan.evaluation_failed",
+        target_resource=str(audit.id),
+        decision="flagged",
+        policy_id=None,
+        metadata={
+            "audit_event_id": str(audit_event_id),
+            "approval_id": str(approval.id),
+            "error_type": error_type,
+        },
+        session_id=session_id,
+    )
+    db.commit()
+
+    from spine.core.event_bus import approval_payload, publish_event_sync
+
+    publish_event_sync(
+        sess.org_id,
+        "approval",
+        approval_payload(
+            approval_id=approval.id,
+            org_id=sess.org_id,
+            agent_id=sess.agent_id,
+            status="pending",
+            audit_event_id=audit_event_id,
+            action_type=audit.action_type,
+            target_resource=audit.target_resource,
+            reason="plan review failed; needs a human",
+        ),
+    )
+    return approval.id

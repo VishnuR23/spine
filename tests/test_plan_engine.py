@@ -228,3 +228,88 @@ def test_reviewer_text_names_the_stop_reason(stop_reason):
 
     with pytest.raises(ValueError, match=stop_reason):
         _reviewer_text(_fake_response(stop_reason))
+
+
+# ---------------------------------------------------------------------------
+# Reviewer failure: fail closed by flagging the action for a human
+# ---------------------------------------------------------------------------
+
+
+def test_failed_review_opens_approval_without_touching_drift(db):
+    from spine.monitor.plan_engine import flag_failed_review
+
+    org_id, agent_id, sess_id = _seed(db)
+    audit = _add_audit(db, org_id=org_id, agent_id=agent_id, session_id=sess_id)
+
+    approval_id = flag_failed_review(db, audit_event_id=audit.id, session_id=sess_id, error_type="ValueError")
+
+    assert approval_id is not None
+    approval = db.get(Approval, approval_id)
+    assert approval.status == "pending"
+    assert approval.audit_event_id == audit.id
+    assert approval.proposed["action"]["metadata"]["spine"]["origin"] == "plan_review_failed"
+
+    row = db.query(AuditEvent).filter(AuditEvent.action_type == "plan.evaluation_failed").one()
+    assert row.policy_decision == "flagged"
+    assert row.target_resource == str(audit.id)
+    assert row.session_id == sess_id
+    assert row.metadata_["error_type"] == "ValueError"
+    assert row.metadata_["approval_id"] == str(approval_id)
+
+    # No verdict was produced, so nothing that depends on one moves.
+    sess = db.get(SessionModel, sess_id)
+    assert sess.drift_score == 0.0
+    assert sess.evaluation_count == 0
+    assert db.query(PlanEvaluation).count() == 0
+
+
+def test_failed_review_is_idempotent(db):
+    from spine.monitor.plan_engine import flag_failed_review
+
+    org_id, agent_id, sess_id = _seed(db)
+    audit = _add_audit(db, org_id=org_id, agent_id=agent_id, session_id=sess_id)
+
+    first = flag_failed_review(db, audit_event_id=audit.id, session_id=sess_id, error_type="ValueError")
+    second = flag_failed_review(db, audit_event_id=audit.id, session_id=sess_id, error_type="ValueError")
+
+    assert first == second
+    assert db.query(Approval).count() == 1
+    assert db.query(AuditEvent).filter(AuditEvent.action_type == "plan.evaluation_failed").count() == 1
+
+
+def test_failed_review_skipped_when_a_verdict_exists(monkeypatch, db):
+    from spine.monitor.plan_engine import flag_failed_review
+
+    org_id, agent_id, sess_id = _seed(db)
+    audit = _add_audit(db, org_id=org_id, agent_id=agent_id, session_id=sess_id)
+    monkeypatch.setattr(
+        "spine.monitor.plan_engine._call_reviewer",
+        lambda _s, _u: '{"alignment": "aligned", "confidence": 0.9, "reasoning": "ok", "drift_contribution": 0.0}',
+    )
+    evaluate_plan_alignment(db, audit_event_id=audit.id, session_id=sess_id)
+
+    assert flag_failed_review(db, audit_event_id=audit.id, session_id=sess_id, error_type="ValueError") is None
+    assert db.query(Approval).count() == 0
+
+
+def test_failed_review_skipped_for_inactive_session(db):
+    from spine.monitor.plan_engine import flag_failed_review
+
+    org_id, agent_id, sess_id = _seed(db)
+    db.get(SessionModel, sess_id).status = "completed"
+    db.commit()
+    audit = _add_audit(db, org_id=org_id, agent_id=agent_id, session_id=sess_id)
+
+    assert flag_failed_review(db, audit_event_id=audit.id, session_id=sess_id, error_type="ValueError") is None
+    assert db.query(Approval).count() == 0
+
+
+def test_failed_review_skipped_for_policy_blocked_event(db):
+    from spine.monitor.plan_engine import flag_failed_review
+
+    settings.monitor_skip_if_policy_blocked = True
+    org_id, agent_id, sess_id = _seed(db)
+    audit = _add_audit(db, org_id=org_id, agent_id=agent_id, session_id=sess_id, decision="blocked")
+
+    assert flag_failed_review(db, audit_event_id=audit.id, session_id=sess_id, error_type="ValueError") is None
+    assert db.query(Approval).count() == 0
