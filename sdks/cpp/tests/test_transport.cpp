@@ -295,6 +295,19 @@ void test_moved_from_client_still_works() {
     check(b.halted(), "and shares its halt with the Client it was moved into");
 }
 
+void test_zero_budget_is_not_unlimited() {
+    FakeSpine server;
+    server.set_delay(std::chrono::milliseconds(400));
+    const spine::Client client(config_for(server));
+    const auto started = std::chrono::steady_clock::now();
+    const auto r = client.intercept_with_budget(read_action(), std::chrono::milliseconds(0));
+    const auto took = std::chrono::steady_clock::now() - started;
+    // libcurl reads a 0 ms timeout as "no timeout". A zero budget must
+    // still bound the call, not leave the order path waiting on the server.
+    check(r.failed_closed && !r.allowed, "a zero budget fails closed");
+    check(took < std::chrono::milliseconds(200), "and does not wait for a slow server");
+}
+
 }  // namespace
 
 void run_transport_tests() {
@@ -316,4 +329,5 @@ void run_transport_tests() {
     test_risk_reducing_calls_pass_a_halt_and_an_open_breaker();
     test_real_block_of_a_risk_reducing_call_is_respected();
     test_moved_from_client_still_works();
+    test_zero_budget_is_not_unlimited();
 }

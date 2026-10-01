@@ -484,7 +484,10 @@ Result Client::perform(const Action& action, std::chrono::milliseconds budget) c
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
     // The whole call is bounded by the budget, not just the connect phase.
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, static_cast<long>(budget.count()));
+    // libcurl reads 0 as "no timeout" and rejects negatives, so a zero or
+    // negative budget would leave the order path unbounded. Floor it.
+    const long budget_ms = budget.count() < 1 ? 1L : static_cast<long>(budget.count());
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, budget_ms);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
 
     const CURLcode rc = curl_easy_perform(curl);
