@@ -20,6 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bands with four-eyes approval, trading-hours window, and market-data
   entitlements, plus a runnable `pretrade_gate` example.
 - `make test-cpp`, and a CI job building and testing the C++ SDK.
+- C++ SDK: connections are pooled and reused by default
+  (`Config::reuse_connections`), shared across copies of a `Client`.
+- C++ SDK: the full order lifecycle. `OrderGate::check_amend` bands an amend
+  on its new size (`order.amend*`); `OrderGate::check_cancel` sends
+  `order.cancel` and allows the cancel when the verdict would be local,
+  because refusing a cancel keeps risk on. Market orders can be sized off a
+  `reference_price` with a slippage collar. The finance policy pack covers
+  amends and cancels.
+- C++ SDK: `Client::stats()` (decision counts, failed-closed and
+  short-circuited counts, latency histogram), a circuit breaker that answers
+  locally while Spine keeps failing, and a manual `halt()` kill switch.
 
 ### Changed
 

@@ -29,6 +29,7 @@ gate.pre_open_check();   // once, at start of day — see "Cold start" below
 
 spine::finance::Order o{"AAPL", spine::finance::Side::Buy,
                         100, 150.00, "XNAS", "stat-arb", "trader-1"};
+o.client_order_id = "co-1";   // ties amends and cancels back to this order
 
 const auto verdict = gate.check(o, session_id);
 if (verdict.allowed) {
@@ -36,6 +37,15 @@ if (verdict.allowed) {
 } else {
     reject(o, verdict.reason);   // "Restricted list", "Four-eyes", ...
 }
+
+// Later in the order's life:
+gate.check_amend(o, resized, session_id);   // banded on the new size
+gate.check_cancel(o, session_id);           // allowed even if Spine is down
+
+// Operations:
+const spine::Stats s = gate.client().stats();   // counts and latency
+gate.client().halt("risk limit breached");      // desk kill switch
+gate.client().resume();
 ```
 
 ## Three decisions worth explaining
@@ -118,6 +128,72 @@ so its notional is unknown. Treating unknown as zero would let it slip under
 every band — the failure mode where a market order becomes the cheapest route
 past a control. It is routed for review instead.
 
+## Amends, cancels, and market orders
+
+**Amends** are a new risk decision at the new size, so they are banded on the
+amended order's notional and use their own action types. The previous
+quantity, price, and notional go with them into the audit trail.
+
+| Amended order | Action type | Shipped policy |
+|---|---|---|
+| Below the review threshold | `order.amend` | allow, during trading hours |
+| At or above 1M | `order.amend.large` | flag — four-eyes approval |
+| At or above 10M | `order.amend.block` | deny |
+| No limit or reference price | `order.amend.unpriced` | flag |
+
+The restricted list and the trading-hours window cover amends exactly as
+they cover new orders.
+
+**Cancels** are the one call that does not fail closed. Refusing a cancel
+keeps the position on, which is the opposite of safe. `check_cancel` asks
+Spine as usual, and a real verdict stands — including a deliberate block,
+if your policy says so. But if the answer would be produced locally (Spine
+unreachable, budget exceeded, breaker open, halted), the cancel is allowed,
+with `failed_closed` set and the reason prefixed `cancel allowed locally: `.
+The shipped pack allows `order.cancel` in any name, at any hour.
+
+**Market orders** can carry a `reference_price` — the last trade or mid you
+would mark them at. With one, the order is sized like a limit order, marked
+up by `NotionalBands::market_collar` (default 1.05) to cover slippage, and
+banded normally. Without one it is still `unpriced` and goes to review. The
+reference is yours to keep fresh: a stale reference is a wrong notional.
+
+Every order check sends `pricing` (`limit`, `reference`, or `unpriced`) and,
+when used, the `reference_price`, so the audit trail shows how each order
+was sized.
+
+## When Spine degrades
+
+**Circuit breaker.** After `Config::breaker_threshold` consecutive local
+verdicts (default 5), the breaker opens: calls are answered locally at once,
+with no network call, instead of each one waiting out the full budget.
+After `breaker_cooldown` (default 5 s) one probe is let through; a real
+verdict closes the breaker, a failure re-opens it. Set the threshold to 0 to
+disable it. `Config::on_breaker_change` is called on each transition — wire
+it to alerting. Exceptions it throws are swallowed, because nothing on the
+order path throws.
+
+While open, orders are refused (or allowed, if you set `fail_open`) with the
+reason `circuit open`. Cancels are allowed.
+
+**Manual halt.** `client().halt(reason)` stops every new order and amend
+locally, with no network call, until `resume()`. It ignores `fail_open`: a
+halt is a decision, not a failure. Cancels still go through. Copies of a
+`Client` share the halt, the breaker, and the stats.
+
+**Stats.** `client().stats()` returns counters that are cheap enough to
+leave on:
+
+- `allowed`, `blocked`, `flagged` — every call lands in exactly one, by its
+  final decision.
+- `failed_closed` — went to Spine, but the verdict was produced locally.
+  A rising count means the control is degrading.
+- `short_circuited` — answered locally with no network call (breaker open,
+  or halted).
+- `latency_buckets` — network calls only, with inclusive upper bounds of 1,
+  2, 5, 10, 20, 50, and 100 ms, plus one for anything slower; and
+  `max_latency`.
+
 ## What stays on the server
 
 The gate holds no restricted list. It sends the symbol as the target resource
@@ -144,10 +220,14 @@ data into an append-only store.
   client does not have. That belongs in a risk system.
 - **Order routing or execution.** Spine answers whether the agent was
   permitted to act, and leaves the proof.
-- **Connection pooling.** Each call opens its own connection, which keeps the
-  class trivially thread-safe. Measured cost is about 0.2 ms on loopback. If
-  your stack has a pooled HTTP client, build the body with
-  `spine::detail::build_intercept_body` and post it yourself.
+
+## Connections
+
+Connections are kept open and reused between calls by default, from a pool
+shared by every copy of a `Client`, so the class stays safe to use from many
+threads. A connection that timed out or errored is dropped rather than
+reused. Set `Config::reuse_connections = false` to open a fresh connection
+per call instead.
 
 ## Running the example
 
