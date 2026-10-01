@@ -139,7 +139,7 @@ The rule is fail-closed by default, fail-open only by explicit opt-in.
 |---|---|
 | Redis down | Policy reads fall through to Postgres; SSE stops; Celery tasks queue and drain on recovery. No data lost. |
 | Worker down | Intercepts continue. Plan evaluations queue up. |
-| Model returns garbage, refuses, or errors | The task retries three times with backoff (1s, 2s, 4s), then gives up. No verdict is recorded and the session's drift score is unchanged, so that one action goes unreviewed. |
+| Model returns garbage, refuses, or errors | The task retries three times with backoff (1s, 2s, 4s). If every attempt fails, it opens a pending approval for the action and writes a `plan.evaluation_failed` row (decision `flagged`) to the audit chain. The drift score is unchanged, since there was no verdict. |
 | Spine unreachable | The Claude Code hook blocks the tool call rather than allowing it. |
 | No policy matches | Denied. There is no implicit allow. |
 | Webhook receiver slow | 2s timeout, does not block other deliveries or the hot path. |
