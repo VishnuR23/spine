@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The plan reviewer now fails closed. When every retry of a review fails
+  (bad JSON, a refusal, or an API error), the worker opens a pending
+  approval for the action and writes a `plan.evaluation_failed` audit row,
+  instead of silently dropping the review and leaving the action
+  unreviewed. The session's drift score is not changed.
+
 - `pyproject.toml` is now the single source of dependencies. `requirements.txt`,
   `requirements-dev.txt`, and `setup.cfg` are removed — install with
   `pip install -e ".[dev]"`. The package previously declared no dependencies at
