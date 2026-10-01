@@ -25,6 +25,7 @@
 #define SPINE_CLIENT_HPP
 
 #include <chrono>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -56,6 +57,10 @@ struct Result {
     std::chrono::microseconds latency{0};
 };
 
+namespace detail {
+struct Shared;
+}  // namespace detail
+
 struct Config {
     std::string base_url;  // e.g. "http://127.0.0.1:8000"
     std::string org_key;   // "spine_..."
@@ -65,6 +70,11 @@ struct Config {
 
     // Leave false. See the header comment.
     bool fail_open = false;
+
+    // Keep connections open between calls instead of paying a TCP handshake
+    // per order. Copies of a Client share one pool. Turn off only if your
+    // network drops idle connections in ways libcurl cannot detect.
+    bool reuse_connections = true;
 };
 
 // One action an agent wants to take. Deliberately flat: everything Spine
@@ -81,10 +91,8 @@ struct Action {
     std::string session_id;
 };
 
-// Holds configuration only. Each intercept() opens its own connection, which
-// keeps the class trivially thread-safe and copyable; if you need connection
-// reuse, build the body with detail::build_intercept_body and post it through
-// whatever pooled client your stack already has.
+// A handle to Spine. Copies share one connection pool (and, below, one set of
+// stats and one breaker), so copy freely and use from many threads.
 class Client {
 public:
     explicit Client(Config config);
@@ -115,7 +123,10 @@ public:
     const Config& config() const { return config_; }
 
 private:
+    Result perform(const Action& action, std::chrono::milliseconds budget) const;
+
     Config config_;
+    std::shared_ptr<detail::Shared> shared_;
 };
 
 // Exposed for testing, and for reuse if you post the body yourself.

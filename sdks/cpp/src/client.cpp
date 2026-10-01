@@ -2,7 +2,9 @@
 
 #include <curl/curl.h>
 
+#include <mutex>
 #include <string>
+#include <vector>
 
 namespace spine {
 
@@ -190,11 +192,54 @@ void ensure_curl_initialised() {
 
 }  // namespace
 
+namespace detail {
+
+struct Shared {
+    explicit Shared(bool reuse_connections) : reuse(reuse_connections) {}
+    ~Shared() {
+        for (CURL* h : pool) curl_easy_cleanup(h);
+    }
+    Shared(const Shared&) = delete;
+    Shared& operator=(const Shared&) = delete;
+
+    CURL* acquire() {
+        if (reuse) {
+            std::lock_guard<std::mutex> g(pool_mu);
+            if (!pool.empty()) {
+                CURL* h = pool.back();
+                pool.pop_back();
+                return h;
+            }
+        }
+        return curl_easy_init();
+    }
+
+    // A handle that just timed out or hit a transport error goes away rather
+    // than back in the pool: its connection state is not worth trusting.
+    void release(CURL* h, bool healthy) {
+        if (h == nullptr) return;
+        if (!reuse || !healthy) {
+            curl_easy_cleanup(h);
+            return;
+        }
+        curl_easy_reset(h);  // clears options, keeps the live connection
+        std::lock_guard<std::mutex> g(pool_mu);
+        pool.push_back(h);
+    }
+
+    const bool reuse;
+    std::mutex pool_mu;
+    std::vector<CURL*> pool;
+};
+
+}  // namespace detail
+
 Client::Client(Config config) : config_(std::move(config)) {
     ensure_curl_initialised();
     if (!config_.base_url.empty() && config_.base_url.back() == '/') {
         config_.base_url.pop_back();
     }
+    shared_ = std::make_shared<detail::Shared>(config_.reuse_connections);
 }
 
 Result Client::intercept(const Action& action) const {
@@ -203,6 +248,10 @@ Result Client::intercept(const Action& action) const {
 
 Result Client::intercept_with_budget(const Action& action,
                                      std::chrono::milliseconds budget) const {
+    return perform(action, budget);
+}
+
+Result Client::perform(const Action& action, std::chrono::milliseconds budget) const {
     const auto started = std::chrono::steady_clock::now();
 
     Result fallback;
@@ -210,7 +259,7 @@ Result Client::intercept_with_budget(const Action& action,
     fallback.decision = config_.fail_open ? Decision::Allowed : Decision::Blocked;
     fallback.failed_closed = true;
 
-    CURL* curl = curl_easy_init();
+    CURL* curl = shared_->acquire();
     if (curl == nullptr) {
         fallback.reason = "could not initialise HTTP client";
         fallback.latency = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -224,6 +273,8 @@ Result Client::intercept_with_budget(const Action& action,
 
     struct curl_slist* headers = nullptr;
     headers = curl_slist_append(headers, "Content-Type: application/json");
+    // Without this libcurl may wait for a "100 Continue" before sending.
+    headers = curl_slist_append(headers, "Expect:");
     const std::string key_header = "X-Org-Key: " + config_.org_key;
     headers = curl_slist_append(headers, key_header.c_str());
 
@@ -243,7 +294,7 @@ Result Client::intercept_with_budget(const Action& action,
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
 
     curl_slist_free_all(headers);
-    curl_easy_cleanup(curl);
+    shared_->release(curl, rc == CURLE_OK);
 
     const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - started);
