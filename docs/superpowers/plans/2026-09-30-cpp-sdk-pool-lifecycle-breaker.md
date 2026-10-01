@@ -1615,13 +1615,15 @@ Result OrderGate::check_cancel(const Order& order, const std::string& session_id
   - Add a new policy after the trading-hours allow:
 
 ```python
-        # Cancels reduce risk. Allowed at any hour, in any name: a restricted
-        # or out-of-hours cancel is still a cancel you want to go through.
-        {
-            "name": "Cancels: always allowed",
-            "rule_type": "action",
-            "rule_config": {"effect": "allow", "action_types": ["order.cancel"]},
-        },
+# Cancels reduce risk. Allowed at any hour, in any name: a restricted
+# or out-of-hours cancel is still a cancel you want to go through.
+(
+    {
+        "name": "Cancels: always allowed",
+        "rule_type": "action",
+        "rule_config": {"effect": "allow", "action_types": ["order.cancel"]},
+    },
+)
 ```
 
   - Add the four `order.amend*` types and `"order.cancel"` to the mandate session's expected action types / constraints list, matching its existing format.
