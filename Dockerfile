@@ -12,6 +12,8 @@ COPY spine /app/spine
 RUN pip install --no-cache-dir .
 
 COPY tools /app/tools
+# The demo (tools/quickstart.py) seeds the finance policy pack from here.
+COPY examples /app/examples
 COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations
 
