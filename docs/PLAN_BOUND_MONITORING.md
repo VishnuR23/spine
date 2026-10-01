@@ -88,6 +88,10 @@ drift_new = 0.3 × drift_contribution + 0.7 × drift_old
 - **Block** — drift crossing `PLAN_DRIFT_BLOCK_THRESHOLD` (default 0.6) causes
   every subsequent intercept in that session to be refused synchronously,
   before policy evaluation runs. The agent needs a new session to proceed.
+- **Review failed** — if every retry of the model call fails, the action is
+  handed to a human instead: an approval ticket opens, a
+  `plan.evaluation_failed` row lands in the audit chain, and a
+  `spine.plan.review_failed` webhook fires. Drift is unchanged.
 
 Approving a flagged action issues a time-boxed grant (default 1 hour) so the
 agent can retry without the whole session being re-litigated.

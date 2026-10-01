@@ -162,11 +162,18 @@ body also accepts a structured `correlation` object.
 ## Webhooks
 
 Register a URL with `POST /v1/webhooks` (the response includes `hmac_key` once).
-Spine then POSTs on each decision and on plan drift:
+Spine then POSTs on each decision, on plan drift, and when a plan review fails:
 
-- `X-Spine-Event: spine.intercept` or `spine.plan.drift`
+- `X-Spine-Event: spine.intercept`, `spine.plan.drift`, or `spine.plan.review_failed`
 - `X-Spine-Signature: v1=<hex>` where the hex is
   `HMAC_SHA256(bytes.fromhex(hmac_key), raw_body_bytes)`
+
+A webhook's `events` list filters what it receives; empty means everything.
+`spine.plan.review_failed` is sent after every retry of a plan review fails
+and the action has been handed to a human. Its body carries `session_id`,
+`agent_id`, `audit_event_id`, `action`, `approval_id`, and `error_type` (an
+exception class name). Subscribe to it with `spine.plan.review_failed`,
+`plan.review_failed`, `decision:plan_review_failed`, or `decision:*`.
 
 URLs are SSRF-validated when `BLOCK_WEBHOOK_PRIVATE_URLS` is on: private,
 loopback, and link-local addresses are rejected, and production requires HTTPS.
