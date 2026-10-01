@@ -1,7 +1,10 @@
 # Claude Code — start here
 
-You are working on **Spine**: policy + monitoring middleware that sits between
-autonomous AI agents and the systems they act on. Read this entire file before
+You are working on **Spine**: pre-trade controls and a provable audit trail
+for AI trading agents — policy + monitoring middleware that sits between
+autonomous agents and the systems they act on. The product is positioned
+finance-first (the C++ `OrderGate` in `sdks/cpp` is the flagship
+integration); the core is domain-neutral and must stay that way. Read this entire file before
 making any change. It is the operating manual, not just an orientation.
 
 For deeper context: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (how the
@@ -339,7 +342,7 @@ npx vite build --outDir /tmp/out         # production build
 npm run dev                              # local dev server (with HMR)
 
 # Seeding (run inside the api container)
-docker compose exec api python tools/quickstart.py   # org + agent + policies + login
+docker compose exec api python tools/quickstart.py   # demo trading desk: finance pack + mandate + login
 docker compose exec api python tools/seed_demo.py    # minimal: org + agent + one policy
 docker compose exec api python tools/create_user.py \
   --email you@local.dev --name "You" --org-id "$ORG_ID" \
