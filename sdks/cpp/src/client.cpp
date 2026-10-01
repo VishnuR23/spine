@@ -184,9 +184,16 @@ Result parse_intercept_response(const std::string& body) {
 namespace {
 
 size_t write_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
-    auto* buf = static_cast<std::string*>(userdata);
-    buf->append(ptr, size * nmemb);
-    return size * nmemb;
+    // An exception must not unwind through libcurl's C frames. Returning a
+    // short count makes libcurl abort the transfer with CURLE_WRITE_ERROR,
+    // which fails closed like any other transport error.
+    try {
+        auto* buf = static_cast<std::string*>(userdata);
+        buf->append(ptr, size * nmemb);
+        return size * nmemb;
+    } catch (...) {
+        return 0;
+    }
 }
 
 // curl_global_init is not thread-safe and must run once per process. A
@@ -372,7 +379,28 @@ Result Client::intercept(const Action& action) const {
 Result Client::intercept_impl(const Action& action, std::chrono::milliseconds budget,
                               bool risk_reducing) const {
     const auto started = Clock::now();
+    // Nothing on the order path throws. Anything that does -- an allocation
+    // failure, say -- becomes a locally produced verdict like a timeout.
+    try {
+        return intercept_checked(action, budget, risk_reducing, started);
+    } catch (...) {
+        Result r;
+        r.allowed = risk_reducing || config_.fail_open;
+        r.decision = r.allowed ? Decision::Allowed : Decision::Blocked;
+        r.failed_closed = true;
+        try {
+            r.reason = "internal error in Spine client";
+        } catch (...) {
+        }
+        r.latency = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - started);
+        ++shared_->failed_closed_n;
+        shared_->count(r);
+        return r;
+    }
+}
 
+Result Client::intercept_checked(const Action& action, std::chrono::milliseconds budget,
+                                 bool risk_reducing, Clock::time_point started) const {
     std::string halt_reason;
     if (shared_->is_halted(&halt_reason)) {
         // fail_open deliberately does not apply: a halt is a decision.
@@ -392,8 +420,23 @@ Result Client::intercept_impl(const Action& action, std::chrono::milliseconds bu
         return r;
     }
 
+    // If this call holds the breaker's only probe slot, the slot must be
+    // given back on every path, including an exception. Otherwise the breaker
+    // stays half-open and refuses every later order for good.
+    struct ProbeGuard {
+        detail::Shared* shared;
+        const Config* config;
+        bool armed;
+        ~ProbeGuard() {
+            if (!armed) return;
+            BreakerState now = BreakerState::Open;
+            if (shared->settle(*config, true, true, &now)) notify(*config, now);
+        }
+    } probe{shared_.get(), &config_, admission == detail::Shared::Admission::Probe};
+
     Result r = perform(action, budget);
 
+    probe.armed = false;
     BreakerState now = BreakerState::Closed;
     if (shared_->settle(config_, r.failed_closed,
                         admission == detail::Shared::Admission::Probe, &now)) {
@@ -457,7 +500,25 @@ Result Client::perform(const Action& action, std::chrono::milliseconds budget) c
     fallback.decision = config_.fail_open ? Decision::Allowed : Decision::Blocked;
     fallback.failed_closed = true;
 
-    CURL* curl = shared_->acquire();
+    const std::string url = config_.base_url + "/v1/intercept";
+    const std::string body = detail::build_intercept_body(action);
+    const std::string key_header = "X-Org-Key: " + config_.org_key;
+    std::string response;
+
+    // Guards, so the handle and header list are released even if something
+    // below throws: a leaked handle is a leaked connection.
+    struct HandleGuard {
+        detail::Shared* shared;
+        CURL* handle;
+        bool healthy = false;
+        ~HandleGuard() { shared->release(handle, healthy); }
+    } guard{shared_.get(), shared_->acquire()};
+    struct HeaderGuard {
+        curl_slist* list = nullptr;
+        ~HeaderGuard() { curl_slist_free_all(list); }
+    } headers;
+
+    CURL* curl = guard.handle;
     if (curl == nullptr) {
         fallback.reason = "could not initialise HTTP client";
         fallback.latency = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -465,22 +526,16 @@ Result Client::perform(const Action& action, std::chrono::milliseconds budget) c
         return fallback;
     }
 
-    const std::string url = config_.base_url + "/v1/intercept";
-    const std::string body = detail::build_intercept_body(action);
-    std::string response;
-
-    struct curl_slist* headers = nullptr;
-    headers = curl_slist_append(headers, "Content-Type: application/json");
+    headers.list = curl_slist_append(headers.list, "Content-Type: application/json");
     // Without this libcurl may wait for a "100 Continue" before sending.
-    headers = curl_slist_append(headers, "Expect:");
-    const std::string key_header = "X-Org-Key: " + config_.org_key;
-    headers = curl_slist_append(headers, key_header.c_str());
+    headers.list = curl_slist_append(headers.list, "Expect:");
+    headers.list = curl_slist_append(headers.list, key_header.c_str());
 
     curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
     curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(body.size()));
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers.list);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_cb);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
     // The whole call is bounded by the budget, not just the connect phase.
@@ -494,8 +549,7 @@ Result Client::perform(const Action& action, std::chrono::milliseconds budget) c
     long status = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
 
-    curl_slist_free_all(headers);
-    shared_->release(curl, rc == CURLE_OK);
+    guard.healthy = (rc == CURLE_OK);
 
     const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now() - started);

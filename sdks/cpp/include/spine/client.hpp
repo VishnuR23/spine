@@ -194,6 +194,9 @@ public:
 private:
     Result intercept_impl(const Action& action, std::chrono::milliseconds budget,
                           bool risk_reducing) const;
+    Result intercept_checked(const Action& action, std::chrono::milliseconds budget,
+                             bool risk_reducing,
+                             std::chrono::steady_clock::time_point started) const;
     Result perform(const Action& action, std::chrono::milliseconds budget) const;
 
     Config config_;

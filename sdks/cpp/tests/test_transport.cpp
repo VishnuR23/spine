@@ -2,6 +2,8 @@
 // stats, circuit breaker, manual halt.
 
 #include <chrono>
+#include <cstdlib>
+#include <new>
 #include <cstdint>
 #include <string>
 #include <thread>
@@ -11,6 +13,24 @@
 #include "check.hpp"
 #include "fake_spine.hpp"
 #include "spine/client.hpp"
+
+// Fault injection: when t_fail_alloc is set, the next allocation on this
+// thread throws std::bad_alloc. Thread-local, so the fake server's own
+// threads are never affected.
+namespace {
+thread_local bool t_fail_alloc = false;
+}  // namespace
+
+void* operator new(std::size_t n) {
+    if (t_fail_alloc) {
+        t_fail_alloc = false;
+        throw std::bad_alloc();
+    }
+    if (void* p = std::malloc(n == 0 ? 1 : n)) return p;
+    throw std::bad_alloc();
+}
+void operator delete(void* p) noexcept { std::free(p); }
+void operator delete(void* p, std::size_t) noexcept { std::free(p); }
 
 namespace {
 
@@ -308,6 +328,56 @@ void test_zero_budget_is_not_unlimited() {
     check(took < std::chrono::milliseconds(200), "and does not wait for a slow server");
 }
 
+void test_exception_during_probe_does_not_wedge_the_breaker() {
+    FakeSpine server;
+    server.respond(500, "{}");
+    spine::Config cfg = config_for(server);
+    cfg.breaker_threshold = 1;
+    cfg.breaker_cooldown = std::chrono::milliseconds(50);
+    const spine::Client client(cfg);
+    const spine::Action action = read_action();
+
+    client.intercept(action);  // trips the breaker
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    server.respond(200, spine_test::kAllowed);
+
+    bool threw = false;
+    spine::Result r;
+    t_fail_alloc = true;  // the probe's first allocation throws
+    try {
+        r = client.intercept(action);
+    } catch (...) {
+        threw = true;
+    }
+    t_fail_alloc = false;
+    check(!threw, "an exception inside a check does not escape the order path");
+    check(!r.allowed && r.failed_closed, "the check fails closed instead");
+    check(client.breaker_state() == spine::BreakerState::Open,
+          "the probe slot is released: the breaker re-opens, not stuck half-open");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    const auto next = client.intercept(action);
+    check(next.allowed && !next.failed_closed, "the next probe reaches a healthy Spine");
+    check(client.breaker_state() == spine::BreakerState::Closed, "and closes the breaker");
+}
+
+void test_exception_on_a_cancel_still_allows_it() {
+    FakeSpine server;
+    const spine::Client client(config_for(server));
+    const spine::Action action = read_action();
+    bool threw = false;
+    spine::Result r;
+    t_fail_alloc = true;
+    try {
+        r = client.intercept_risk_reducing(action);
+    } catch (...) {
+        threw = true;
+    }
+    t_fail_alloc = false;
+    check(!threw && r.allowed && r.failed_closed,
+          "an internal error on a risk-reducing call allows it locally");
+}
+
 }  // namespace
 
 void run_transport_tests() {
@@ -330,4 +400,6 @@ void run_transport_tests() {
     test_real_block_of_a_risk_reducing_call_is_respected();
     test_moved_from_client_still_works();
     test_zero_budget_is_not_unlimited();
+    test_exception_during_probe_does_not_wedge_the_breaker();
+    test_exception_on_a_cancel_still_allows_it();
 }
