@@ -23,6 +23,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spine.config.settings import settings
+from spine.core import redis_guard
 from spine.models.policy import Policy
 
 logger = logging.getLogger(__name__)
@@ -34,14 +35,21 @@ def _key(org_id: uuid.UUID) -> str:
     return f"spine:policies:cache:{org_id}"
 
 
-async def _aredis():
-    """Return an asyncio redis client or None."""
+async def _aredis(*, hot_path: bool = False):
+    """Return an asyncio redis client or None.
+
+    hot_path clients are bounded by redis_guard's timeouts, and are not
+    created at all while Redis is being skipped after a failure.
+    """
     if not settings.redis_url.strip():
+        return None
+    if hot_path and not redis_guard.available():
         return None
     try:
         import redis.asyncio as aioredis
 
-        return aioredis.from_url(settings.redis_url, decode_responses=True)
+        extra = redis_guard.client_kwargs() if hot_path else {}
+        return aioredis.from_url(settings.redis_url, decode_responses=True, **extra)
     except Exception:
         logger.debug("redis async unavailable", exc_info=True)
         return None
@@ -88,7 +96,7 @@ async def get_active_policies_for_intercept(db: AsyncSession, *, org_id: uuid.UU
     """
     from spine.observability.metrics import inc_policy_cache_event
 
-    client = await _aredis()
+    client = await _aredis(hot_path=True)
     if client is not None:
         try:
             raw = await client.get(_key(org_id))
@@ -98,6 +106,7 @@ async def get_active_policies_for_intercept(db: AsyncSession, *, org_id: uuid.UU
             inc_policy_cache_event("miss")
         except Exception:
             inc_policy_cache_event("error")
+            redis_guard.mark_down()
             logger.debug("policy cache read failed", exc_info=True)
         finally:
             try:
@@ -110,11 +119,12 @@ async def get_active_policies_for_intercept(db: AsyncSession, *, org_id: uuid.UU
     policies = await _load_from_db(db, org_id=org_id)
 
     # Repopulate cache (best-effort)
-    repopulate = await _aredis()
+    repopulate = await _aredis(hot_path=True)
     if repopulate is not None:
         try:
             await repopulate.setex(_key(org_id), CACHE_TTL_SECONDS, json.dumps(policies, default=str))
         except Exception:
+            redis_guard.mark_down()
             logger.debug("policy cache write failed", exc_info=True)
         finally:
             try:

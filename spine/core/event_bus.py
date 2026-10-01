@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from spine.config.settings import settings
+from spine.core import redis_guard
 from spine.core.redaction import stream_safe_audit_payload
 from spine.schemas.events import SpineStreamEvent
 
@@ -29,17 +30,20 @@ def _encode(event_type: str, org_id: uuid.UUID, data: dict[str, Any]) -> str:
 
 
 async def publish_event_async(org_id: uuid.UUID, event_type: str, data: dict[str, Any]) -> None:
-    if not settings.sse_enabled:
+    # Runs inside API requests, including intercept: bounded and skipped
+    # while Redis is down, so a live-feed update never delays an order check.
+    if not settings.sse_enabled or not redis_guard.available():
         return
     try:
         import redis.asyncio as aioredis
 
-        client = aioredis.from_url(settings.redis_url, decode_responses=True)
+        client = aioredis.from_url(settings.redis_url, decode_responses=True, **redis_guard.client_kwargs())
         try:
             await client.publish(_channel(org_id), _encode(event_type, org_id, data))
         finally:
             await client.aclose()
     except Exception:
+        redis_guard.mark_down()
         logger.debug("event_bus publish failed", exc_info=True)
 
 

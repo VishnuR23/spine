@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     monitor_model: str = Field(default="claude-sonnet-5-5", validation_alias="MONITOR_MODEL")
     redis_url: str = Field(default="redis://redis:6379/0", validation_alias="REDIS_URL")
     celery_broker_url: str = Field(default="", validation_alias="CELERY_BROKER_URL")
+    # Hot-path Redis calls (policy cache read, event publish, task enqueue)
+    # give up after this long, then skip Redis for redis_retry_after_seconds.
+    # See spine/core/redis_guard.py.
+    redis_hot_path_timeout_ms: int = Field(default=50, validation_alias="REDIS_HOT_PATH_TIMEOUT_MS")
+    redis_retry_after_seconds: float = Field(default=5.0, validation_alias="REDIS_RETRY_AFTER_SECONDS")
     # When an audit event was policy-blocked, skip the reviewer (it never ran).
     monitor_skip_if_policy_blocked: bool = Field(default=True, validation_alias="MONITOR_SKIP_IF_POLICY_BLOCKED")
     sse_enabled: bool = Field(default=True, validation_alias="SSE_ENABLED")

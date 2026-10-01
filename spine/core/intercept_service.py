@@ -1,9 +1,11 @@
+import logging
 import uuid
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spine.config.settings import settings
+from spine.core import redis_guard
 from spine.core.approval_grants import find_active_grant
 from spine.core.audit_logger import log_event
 from spine.core.identity import get_active_agent
@@ -13,6 +15,8 @@ from spine.models.approval import Approval
 from spine.models.session import Session as SessionModel
 from spine.observability.metrics import inc_intercept
 from spine.schemas.intercept import InterceptRequest, InterceptResponse
+
+logger = logging.getLogger(__name__)
 
 
 async def _load_active_session(
@@ -248,13 +252,20 @@ async def run_intercept(
 
     # Plan-bound monitoring: enqueue a plan_alignment evaluation for any
     # intercept that carried a session_id and was not policy-blocked.
-    if payload.session_id is not None and decision != "blocked":
+    #
+    # The enqueue is a blocking broker call inside this async handler. With
+    # Celery's default publish retries it took ~650 ms when the broker was
+    # down, long enough to expire an order's latency budget. So: no retries,
+    # a bounded connect (celery_app), and skipped while Redis is down. An
+    # enqueue that fails here means that order goes unreviewed.
+    if payload.session_id is not None and decision != "blocked" and redis_guard.available():
         try:
             from spine.worker.tasks import evaluate_plan_alignment_task
 
-            evaluate_plan_alignment_task.delay(str(audit.id), str(payload.session_id))
+            evaluate_plan_alignment_task.apply_async((str(audit.id), str(payload.session_id)), retry=False)
         except Exception:
-            pass
+            redis_guard.mark_down()
+            logger.warning("plan review enqueue failed; this order will not be reviewed", exc_info=True)
 
     return InterceptResponse(
         allowed=allowed,
