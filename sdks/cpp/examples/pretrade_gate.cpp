@@ -1,6 +1,7 @@
 // A pre-trade gate, end to end.
 //
-// Sends four orders through Spine and prints each verdict. Run it against a
+// Sends five orders, an amend, and a cancel through Spine, prints each
+// verdict, then the client's own stats and breaker state. Run it against a
 // Spine seeded with the finance policy pack:
 //
 //   make demo
@@ -32,12 +33,16 @@ void print_verdict(const spine::finance::Order& order,
                    const std::string& action_type,
                    const spine::Result& r) {
     const char* mark = r.allowed ? "SENT   " : "STOPPED";
-    std::printf("  %s  %-4s %-5s %8lld @ %-9.2f  %-22s  %s\n",
+    // A market order with a reference price shows the reference, marked "~".
+    const bool by_reference = order.limit_price <= 0.0 && order.reference_price > 0.0;
+    std::printf("  %s  %-4s %-5s %8lld @ %s%-*.2f  %-22s  %s\n",
                 mark,
                 spine::finance::to_string(order.side),
                 order.symbol.c_str(),
                 order.quantity,
-                order.limit_price,
+                by_reference ? "~" : "",
+                by_reference ? 8 : 9,
+                by_reference ? order.reference_price : order.limit_price,
                 action_type.c_str(),
                 spine::to_string(r.decision));
     std::printf("           reason: %s\n",
@@ -68,18 +73,29 @@ int main() {
     using spine::finance::Order;
     using spine::finance::Side;
 
+    auto order = [](const char* id, const char* sym, Side side, long long qty,
+                    double limit, double reference = 0.0) {
+        Order o{sym, side, qty, limit, "XNAS", "stat-arb", "t-1"};
+        o.client_order_id = id;
+        o.reference_price = reference;
+        return o;
+    };
+
     const std::vector<std::pair<const char*, Order>> cases = {
         {"ordinary order, within every limit",
-         Order{"AAPL", Side::Buy, 100, 150.00, "XNAS", "stat-arb", "t-1"}},
+         order("co-1", "AAPL", Side::Buy, 100, 150.00)},
 
         {"restricted symbol — the list lives in Spine, not in this binary",
-         Order{"RSTR", Side::Buy, 100, 42.00, "XNAS", "stat-arb", "t-1"}},
+         order("co-2", "RSTR", Side::Buy, 100, 42.00)},
 
         {"large notional — four-eyes review before it can go",
-         Order{"MSFT", Side::Buy, 20000, 300.00, "XNAS", "stat-arb", "t-1"}},
+         order("co-3", "MSFT", Side::Buy, 20000, 300.00)},
 
         {"market order — unpriced, so notional is unbounded",
-         Order{"NVDA", Side::Sell, 5000, 0.00, "XNAS", "stat-arb", "t-1"}},
+         order("co-4", "NVDA", Side::Sell, 5000, 0.00)},
+
+        {"market order priced off a reference — sized, not guessed",
+         order("co-5", "NVDA", Side::Sell, 500, 0.00, 450.00)},
     };
 
     std::printf("\n  Spine pre-trade gate  ->  %s\n", cfg.base_url.c_str());
@@ -106,7 +122,34 @@ int main() {
         if (!r.failed_closed) ++reached_spine;
     }
 
-    std::printf("  %d of %zu orders stopped.\n\n", stopped, cases.size());
+    // Resizing an order is a new risk decision at the new size.
+    Order resized = cases[0].second;
+    resized.quantity = 20000;
+    std::printf("  amend: resize the first order to 20,000 shares\n");
+    const spine::Result amend = gate.check_amend(cases[0].second, resized, session_id);
+    print_verdict(resized, spine::finance::action_type_for("order.amend", resized, bands), amend);
+    if (!amend.failed_closed) ++reached_spine;
+
+    // Cancels reduce risk, so they go through even when Spine cannot answer.
+    std::printf("  cancel: always allowed if Spine cannot answer\n");
+    const spine::Result cancel = gate.check_cancel(cases[0].second, session_id);
+    print_verdict(cases[0].second, "order.cancel", cancel);
+    if (!cancel.failed_closed) ++reached_spine;
+
+    std::printf("  %d of %zu new orders stopped.\n\n", stopped, cases.size());
+
+    // The client keeps its own counters. A rising failed-closed count, or an
+    // open breaker, is the control degrading — worth an alert of its own.
+    const spine::Stats s = gate.client().stats();
+    std::printf("  stats: %llu allowed, %llu blocked, %llu flagged, "
+                "%llu failed closed, %llu short-circuited, max %lld us\n",
+                static_cast<unsigned long long>(s.allowed),
+                static_cast<unsigned long long>(s.blocked),
+                static_cast<unsigned long long>(s.flagged),
+                static_cast<unsigned long long>(s.failed_closed),
+                static_cast<unsigned long long>(s.short_circuited),
+                static_cast<long long>(s.max_latency.count()));
+    std::printf("  breaker: %s\n\n", spine::to_string(gate.client().breaker_state()));
 
     if (reached_spine > 0) {
         std::printf("  Those %d decisions are now rows in the hash-chained audit\n"
