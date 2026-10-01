@@ -143,6 +143,12 @@ class Client {
 public:
     explicit Client(Config config);
 
+    // Copies share state. Moves are deliberately copies too (no move
+    // operations are declared), so a moved-from Client stays usable and
+    // never dereferences null on the order path.
+    Client(const Client&) = default;
+    Client& operator=(const Client&) = default;
+
     // Ask Spine whether this action may proceed. Never throws: a transport
     // failure becomes a Result with failed_closed set, because a gate that
     // throws on the order path will eventually be wrapped in a bare catch

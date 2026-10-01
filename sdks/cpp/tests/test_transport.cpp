@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "check.hpp"
@@ -281,6 +282,19 @@ void test_real_block_of_a_risk_reducing_call_is_respected() {
     check(!r.allowed && !r.failed_closed, "a deliberate block from Spine is not overridden");
 }
 
+void test_moved_from_client_still_works() {
+    FakeSpine server;
+    spine::Client a(config_for(server));
+    spine::Client b(std::move(a));  // e.g. handed to an OrderGate
+    b.intercept(read_action());
+    // A moved-from Client must not crash on the order path; it keeps
+    // sharing the same pool, stats, breaker, and halt.
+    const auto r = a.intercept(read_action());  // NOLINT(bugprone-use-after-move)
+    check(r.allowed && !r.failed_closed, "a moved-from Client still gets real verdicts");
+    a.halt("x");
+    check(b.halted(), "and shares its halt with the Client it was moved into");
+}
+
 }  // namespace
 
 void run_transport_tests() {
@@ -301,4 +315,5 @@ void run_transport_tests() {
     test_halt_blocks_without_a_network_call();
     test_risk_reducing_calls_pass_a_halt_and_an_open_breaker();
     test_real_block_of_a_risk_reducing_call_is_respected();
+    test_moved_from_client_still_works();
 }
