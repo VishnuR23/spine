@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import json
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -68,8 +69,10 @@ async def dispatch_intercept_event(db: AsyncSession, *, org_id, payload: dict[st
             continue
 
 
-def dispatch_plan_drift_event_sync(session, *, org_id, payload: dict[str, Any]) -> None:
-    """Dispatch a spine.plan.drift webhook from the Celery worker (sync)."""
+def _dispatch_sync(
+    session, *, org_id, event: str, payload: dict[str, Any], wants: Callable[[list[str] | None], bool]
+) -> None:
+    """Sign and POST one worker-side event to every active org webhook that wants it."""
     hooks = list(
         session.execute(sa.select(Webhook).where(Webhook.org_id == org_id).where(Webhook.is_active.is_(True)))
         .scalars()
@@ -81,15 +84,20 @@ def dispatch_plan_drift_event_sync(session, *, org_id, payload: dict[str, Any]) 
     body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
     with httpx.Client(timeout=settings.webhook_timeout_seconds) as client:
         for wh in hooks:
-            if not _should_send_plan_drift(wh.events):
+            if not wants(wh.events):
                 continue
             signature = _sign_hex_key(wh.hmac_key, body)
             headers = {
                 "content-type": "application/json",
-                "X-Spine-Event": "spine.plan.drift",
+                "X-Spine-Event": event,
                 "X-Spine-Signature": f"v1={signature}",
             }
             try:
                 client.post(wh.url, content=body, headers=headers)
             except Exception:
                 continue
+
+
+def dispatch_plan_drift_event_sync(session, *, org_id, payload: dict[str, Any]) -> None:
+    """Dispatch a spine.plan.drift webhook from the Celery worker (sync)."""
+    _dispatch_sync(session, org_id=org_id, event="spine.plan.drift", payload=payload, wants=_should_send_plan_drift)
