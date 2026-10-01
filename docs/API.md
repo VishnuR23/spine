@@ -71,17 +71,16 @@ curl -sS -X POST "http://localhost:8000/v1/policies" \
   -H "Content-Type: application/json" \
   -H "X-Org-Key: $ORG_KEY" \
   -d '{
-    "name": "Allow reads under /data",
+    "name": "Allow ordinary orders",
     "rule_type": "action",
     "rule_config": {
       "effect": "allow",
-      "action_types": ["read"],
-      "target_resource_regex": "^/data/.*"
+      "action_types": ["order.place"]
     }
   }'
 ```
 
-**Intercept an action:**
+**Ask about an order:**
 
 ```bash
 curl -sS -X POST "http://localhost:8000/v1/intercept" \
@@ -90,15 +89,16 @@ curl -sS -X POST "http://localhost:8000/v1/intercept" \
   -d "{
     \"agent_id\": \"$AGENT_ID\",
     \"action\": {
-      \"action_type\": \"read\",
-      \"target_resource\": \"/data/report.csv\",
-      \"metadata\": {\"ticket\": \"INC-42\"}
+      \"action_type\": \"order.place\",
+      \"target_resource\": \"AAPL\",
+      \"metadata\": {\"side\": \"BUY\", \"quantity\": \"100\", \"limit_price\": \"150.00\"}
     }
   }"
 ```
 
-Change the target to `/etc/passwd` and it is denied — no policy matches, and
-the default is deny.
+Change the action type to `order.place.large` and it is denied — no policy
+matches, and the default is deny. A real desk flags that band for four-eyes
+review instead; `examples/finance/seed_finance_policies.py` seeds the full set.
 
 **Read the audit log, and verify it:**
 
@@ -127,7 +127,8 @@ explicitly on write.
 
 ## Sessions and plan review
 
-Open a session to enable plan-bound review. Full detail in
+Open a session to declare the agent's mandate and enable plan-bound review.
+Full detail in
 [PLAN_BOUND_MONITORING.md](PLAN_BOUND_MONITORING.md).
 
 ```bash
@@ -136,10 +137,10 @@ curl -sS -X POST "http://localhost:8000/v1/sessions" \
   -H "X-Org-Key: $ORG_KEY" \
   -d "{
     \"agent_id\": \"$AGENT_ID\",
-    \"goal\": \"Summarize last week's support tickets\",
-    \"constraints\": [\"read-only\", \"no external network calls\"],
-    \"expected_resources\": [\"/data/tickets/*\"],
-    \"success_criteria\": \"a summary written to /data/summary.md\"
+    \"goal\": \"Rebalance the US equity book toward the published target weights\",
+    \"constraints\": [\"only trade names already held in the book\"],
+    \"expected_resources\": [\"AAPL\", \"MSFT\", \"NVDA\"],
+    \"success_criteria\": \"book weights within 50bps of target\"
   }"
 ```
 
