@@ -1,5 +1,9 @@
 """Seed a finance policy pack and a trading mandate.
 
+Covers the whole order lifecycle the C++ gate can ask about: new orders and
+amends share the same bands, restricted list, and trading hours; cancels are
+always allowed, because refusing one keeps risk on.
+
 Creates an org, an API key, an agent, the policies below, and a session whose
 declared plan is the agent's mandate. Prints the exports the C++ pre-trade
 gate needs.
@@ -71,6 +75,10 @@ def policies(always_open: bool) -> list[dict]:
                     "order.place.large",
                     "order.place.unpriced",
                     "order.place.block",
+                    "order.amend",
+                    "order.amend.large",
+                    "order.amend.unpriced",
+                    "order.amend.block",
                 ],
                 "target_resource_regex": restricted_regex,
             },
@@ -79,19 +87,19 @@ def policies(always_open: bool) -> list[dict]:
         {
             "name": "Notional ceiling: refuse orders above 10M",
             "rule_type": "action",
-            "rule_config": {"effect": "deny", "action_types": ["order.place.block"]},
+            "rule_config": {"effect": "deny", "action_types": ["order.place.block", "order.amend.block"]},
         },
         # Four-eyes. Flag withholds the order and opens an approval ticket;
         # approving issues a time-boxed grant so the retry goes through.
         {
             "name": "Four-eyes: orders above 1M need human sign-off",
             "rule_type": "action",
-            "rule_config": {"effect": "flag", "action_types": ["order.place.large"]},
+            "rule_config": {"effect": "flag", "action_types": ["order.place.large", "order.amend.large"]},
         },
         {
             "name": "Four-eyes: unpriced orders need human sign-off",
             "rule_type": "action",
-            "rule_config": {"effect": "flag", "action_types": ["order.place.unpriced"]},
+            "rule_config": {"effect": "flag", "action_types": ["order.place.unpriced", "order.amend.unpriced"]},
         },
         # The ordinary path.
         {
@@ -99,9 +107,16 @@ def policies(always_open: bool) -> list[dict]:
             "rule_type": "action",
             "rule_config": {
                 "effect": "allow",
-                "action_types": ["order.place"],
+                "action_types": ["order.place", "order.amend"],
                 **({"time_window_utc": window} if window else {}),
             },
+        },
+        # Cancels reduce risk. Allowed at any hour, in any name: a restricted
+        # or out-of-hours cancel is still a cancel you want to go through.
+        {
+            "name": "Cancels: always allowed",
+            "rule_type": "action",
+            "rule_config": {"effect": "allow", "action_types": ["order.cancel"]},
         },
         # Market data entitlements. Feeds not named here fall through to
         # default-deny, which is the correct posture for licensed data.
@@ -132,6 +147,9 @@ def policies(always_open: bool) -> list[dict]:
                         "order.place",
                         "order.place.large",
                         "order.place.unpriced",
+                        "order.amend",
+                        "order.amend.large",
+                        "order.amend.unpriced",
                     ],
                     "time_window_utc": {"start": RTH_END_UTC, "end": RTH_START_UTC},
                 },
@@ -151,6 +169,7 @@ MANDATE = {
         "no single order above 1M notional without human approval",
         "no trading outside regular US equity hours",
         "no orders in restricted names",
+        "amends follow the same limits as new orders",
     ],
     "expected_resources": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL"],
     "success_criteria": "book weights within 50bps of target, no restricted names touched",
