@@ -104,3 +104,66 @@ def test_success_after_a_retry_does_not_flag(monkeypatch, SessionLocal):
     assert result.result["alignment"] == "aligned"
     with SessionLocal() as db:
         assert db.query(Approval).count() == 0
+
+
+def test_failure_row_keeps_the_audit_chain_verifiable(tmp_path):
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+    from spine.core.audit_verify import verify_org_chain
+    from spine.core.sync_audit_logger import log_event_sync
+    from spine.monitor.plan_engine import flag_failed_review
+
+    db_file = tmp_path / "chain.db"
+    sync_engine = create_engine(f"sqlite:///{db_file}")
+    Base.metadata.create_all(sync_engine)
+    saved_sse = settings.sse_enabled
+    settings.sse_enabled = False
+    try:
+        org_id, agent_id, sess_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        with sessionmaker(sync_engine, expire_on_commit=False)() as db:
+            db.add(Agent(id=agent_id, org_id=org_id, name="a", framework="generic"))
+            db.add(
+                SessionModel(
+                    id=sess_id,
+                    org_id=org_id,
+                    agent_id=agent_id,
+                    goal="g",
+                    constraints=[],
+                    expected_resources=[],
+                    status="active",
+                    drift_score=0.0,
+                    evaluation_count=0,
+                )
+            )
+            # A real chained row, as the intercept path would write it.
+            intercept = log_event_sync(
+                db,
+                agent_id=agent_id,
+                org_id=org_id,
+                action_type="read",
+                target_resource="/x",
+                decision="allowed",
+                policy_id=None,
+                metadata={},
+                session_id=sess_id,
+            )
+            db.commit()
+            assert flag_failed_review(db, audit_event_id=intercept.id, session_id=sess_id, error_type="ValueError")
+
+        async_engine = create_async_engine(f"sqlite+aiosqlite:///{db_file}")
+
+        async def verify():
+            async with AsyncSession(async_engine) as s:
+                result = await verify_org_chain(s, org_id=org_id)
+            await async_engine.dispose()
+            return result
+
+        result = asyncio.run(verify())
+        assert result.ok is True
+        assert result.checked == 2
+        assert result.first_bad_sequence is None
+    finally:
+        sync_engine.dispose()
+        settings.sse_enabled = saved_sse
