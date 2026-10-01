@@ -12,9 +12,9 @@ import time
 
 import pytest
 
-from spine.config.settings import settings
+from spine.core import redis_guard
 from spine.core.policy_cache import get_active_policies_for_intercept
-from spine.worker.celery_app import celery_app
+from tests._redis_helpers import point_redis_at
 from tests._session_fixture import client, seed_org_and_agent  # noqa: F401
 from tests.test_intercept_with_session import _add_allow_read, _make_session
 
@@ -22,23 +22,10 @@ REFUSED = "redis://127.0.0.1:1/0"  # nothing listens: connection refused at once
 UNREACHABLE = "redis://10.255.255.1:6379/0"  # non-routable: packets just vanish
 
 
-def _reset_guard():
-    try:
-        from spine.core import redis_guard
-    except ImportError:
-        return
-    redis_guard.reset()
-
-
 @pytest.fixture()
 def redis_at(monkeypatch):
-    def point(url):
-        monkeypatch.setattr(settings, "redis_url", url)
-        monkeypatch.setattr(celery_app.conf, "broker_url", url)
-        _reset_guard()
-
-    yield point
-    _reset_guard()
+    yield lambda url: point_redis_at(monkeypatch, url)
+    redis_guard.reset()
 
 
 def test_order_in_a_session_is_fast_when_redis_refuses(client, redis_at):  # noqa: F811

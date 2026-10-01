@@ -41,8 +41,20 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      # A real Redis, so tests/test_redis_live.py runs: the hot-path cache,
+      # queue, and recovery behaviour against the real thing.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
     env:
       DATABASE_URL: postgresql+asyncpg://spine:spine@localhost:5432/spine_test
+      SPINE_TEST_REDIS_URL: redis://localhost:6379/15
       ADMIN_API_KEY: test-key
       JWT_SECRET: test-secret
     steps:
@@ -51,7 +63,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: pytest -v
+      # -rs prints skip reasons, so a silently skipped live-Redis test shows.
+      - run: pytest -v -rs
 
   hook:
     name: Claude Code hook tests
