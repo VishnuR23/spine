@@ -236,6 +236,51 @@ void test_throwing_callback_is_contained() {
     check(client.breaker_state() == spine::BreakerState::Open, "and the breaker still tripped");
 }
 
+void test_halt_blocks_without_a_network_call() {
+    FakeSpine server;
+    spine::Config cfg = config_for(server);
+    cfg.fail_open = true;  // a halt must win even over fail_open
+    const spine::Client client(cfg);
+    client.halt("desk kill switch");
+    check(client.halted(), "halted() reports the halt");
+    const auto r = client.intercept(read_action());
+    check(!r.allowed && r.failed_closed, "a halted client refuses locally");
+    check_eq(r.reason, "halted: desk kill switch", "the reason carries the operator's text");
+    check(server.requests() == 0, "and makes no network call");
+
+    client.resume();
+    check(!client.halted(), "resume() clears the halt");
+    check(client.intercept(read_action()).allowed, "after resume, calls reach Spine again");
+}
+
+void test_risk_reducing_calls_pass_a_halt_and_an_open_breaker() {
+    FakeSpine server;
+    server.respond(500, "{}");
+    spine::Config cfg = config_for(server);
+    cfg.breaker_threshold = 1;
+    const spine::Client client(cfg);
+
+    const auto failed = client.intercept_risk_reducing(read_action());
+    check(failed.allowed && failed.failed_closed, "a risk-reducing call is allowed when Spine fails");
+    check(client.breaker_state() == spine::BreakerState::Open, "the failure still counts toward the breaker");
+
+    const auto open = client.intercept_risk_reducing(read_action());
+    check(open.allowed && open.failed_closed, "and allowed while the breaker is open");
+    check_eq(open.reason, "circuit open", "with the breaker as the reason");
+
+    client.halt("test");
+    const auto halted = client.intercept_risk_reducing(read_action());
+    check(halted.allowed, "and allowed during a halt");
+}
+
+void test_real_block_of_a_risk_reducing_call_is_respected() {
+    FakeSpine server;
+    server.respond(200, spine_test::kBlocked);
+    const spine::Client client(config_for(server));
+    const auto r = client.intercept_risk_reducing(read_action());
+    check(!r.allowed && !r.failed_closed, "a deliberate block from Spine is not overridden");
+}
+
 }  // namespace
 
 void run_transport_tests() {
@@ -253,4 +298,7 @@ void run_transport_tests() {
     test_open_breaker_honours_fail_open();
     test_threshold_zero_disables_the_breaker();
     test_throwing_callback_is_contained();
+    test_halt_blocks_without_a_network_call();
+    test_risk_reducing_calls_pass_a_halt_and_an_open_breaker();
+    test_real_block_of_a_risk_reducing_call_is_respected();
 }

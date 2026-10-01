@@ -168,10 +168,26 @@ public:
 
     const Config& config() const { return config_; }
 
+    // For actions that reduce risk, such as cancelling an order. Asks Spine
+    // as usual and honours a real verdict, including a deliberate block. But
+    // when the verdict would be produced locally -- Spine unreachable, budget
+    // exceeded, breaker open, halted -- it allows, because refusing a cancel
+    // keeps the risk on. Result::failed_closed still marks it as local.
+    Result intercept_risk_reducing(const Action& action) const;
+
+    // Local kill switch. While halted, every call except risk-reducing ones
+    // is refused at once, with no network call, regardless of fail_open.
+    // Copies of this Client share the halt.
+    void halt(const std::string& reason) const;
+    void resume() const;
+    bool halted() const;
+
     Stats stats() const;
     BreakerState breaker_state() const;
 
 private:
+    Result intercept_impl(const Action& action, std::chrono::milliseconds budget,
+                          bool risk_reducing) const;
     Result perform(const Action& action, std::chrono::milliseconds budget) const;
 
     Config config_;

@@ -327,6 +327,16 @@ struct Shared {
         return state;
     }
 
+    bool is_halted(std::string* reason) {
+        std::lock_guard<std::mutex> g(halt_mu);
+        if (halted && reason != nullptr) *reason = halt_reason;
+        return halted;
+    }
+
+    std::mutex halt_mu;
+    bool halted = false;
+    std::string halt_reason;
+
     std::mutex breaker_mu;
     BreakerState state = BreakerState::Closed;
     int failures = 0;
@@ -359,15 +369,24 @@ Result Client::intercept(const Action& action) const {
     return intercept_with_budget(action, config_.timeout);
 }
 
-Result Client::intercept_with_budget(const Action& action,
-                                     std::chrono::milliseconds budget) const {
+Result Client::intercept_impl(const Action& action, std::chrono::milliseconds budget,
+                              bool risk_reducing) const {
     const auto started = Clock::now();
+
+    std::string halt_reason;
+    if (shared_->is_halted(&halt_reason)) {
+        // fail_open deliberately does not apply: a halt is a decision.
+        Result r = local_verdict(risk_reducing, "halted: " + halt_reason, started);
+        ++shared_->short_circuited_n;
+        shared_->count(r);
+        return r;
+    }
 
     bool changed = false;
     const auto admission = shared_->admit(config_, &changed);
     if (changed) notify(config_, BreakerState::HalfOpen);
     if (admission == detail::Shared::Admission::ShortCircuit) {
-        Result r = local_verdict(config_.fail_open, "circuit open", started);
+        Result r = local_verdict(risk_reducing || config_.fail_open, "circuit open", started);
         ++shared_->short_circuited_n;
         shared_->count(r);
         return r;
@@ -381,11 +400,40 @@ Result Client::intercept_with_budget(const Action& action,
         notify(config_, now);
     }
 
-    if (r.failed_closed) ++shared_->failed_closed_n;
+    if (r.failed_closed) {
+        ++shared_->failed_closed_n;
+        if (risk_reducing) {
+            r.allowed = true;
+            r.decision = Decision::Allowed;
+        }
+    }
     shared_->observe(r.latency);
     shared_->count(r);
     return r;
 }
+
+Result Client::intercept_with_budget(const Action& action,
+                                     std::chrono::milliseconds budget) const {
+    return intercept_impl(action, budget, false);
+}
+
+Result Client::intercept_risk_reducing(const Action& action) const {
+    return intercept_impl(action, config_.timeout, true);
+}
+
+void Client::halt(const std::string& reason) const {
+    std::lock_guard<std::mutex> g(shared_->halt_mu);
+    shared_->halted = true;
+    shared_->halt_reason = reason;
+}
+
+void Client::resume() const {
+    std::lock_guard<std::mutex> g(shared_->halt_mu);
+    shared_->halted = false;
+    shared_->halt_reason.clear();
+}
+
+bool Client::halted() const { return shared_->is_halted(nullptr); }
 
 BreakerState Client::breaker_state() const { return shared_->breaker(); }
 
