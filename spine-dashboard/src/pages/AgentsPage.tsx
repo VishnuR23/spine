@@ -65,7 +65,7 @@ export function AgentsPage() {
     <div className="space-y-8">
       <PageHeader
         title="Agents"
-        description="Register agent identities used in intercept requests. Deactivate agents you no longer use."
+        description="Register an identity for each trading agent. Every order check, approval, and audit row is scoped to one. Deactivate agents you no longer use."
       />
 
       <Card>
@@ -76,7 +76,7 @@ export function AgentsPage() {
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="billing-bot"
+                placeholder="rebalancer"
                 required
               />
             </Field>
@@ -104,7 +104,7 @@ export function AgentsPage() {
             <Spinner className="h-6 w-6" />
           </div>
         ) : agents.length === 0 ? (
-          <EmptyState title="No agents yet" description="Register your first agent to start sending intercepts." />
+          <EmptyState title="No agents yet" description="Register your first agent before it sends any orders." />
         ) : (
           <div className="overflow-x-auto">
             <table className="data-table">

@@ -344,12 +344,12 @@ export function SessionDetailPage() {
       <Card>
         <CardHeader
           title="Evaluations timeline"
-          subtitle="Reviewer verdict for each tool call in the session. Click a row to read the reasoning."
+          subtitle="Reviewer verdict for each order in the session. Click a row to read the reasoning."
         />
         {evaluations.length === 0 ? (
           <EmptyState
             title="No evaluations yet"
-            description="When the agent calls a tool in this session, the reviewer's verdict appears here."
+            description="When the agent sends an order in this session, the reviewer's verdict appears here."
           />
         ) : (
           <div className="overflow-x-auto">

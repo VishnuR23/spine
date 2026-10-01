@@ -111,7 +111,7 @@ export function HomePage() {
     <div className="space-y-8">
       <PageHeader
         title={user?.org_name || "Overview"}
-        description="Real-time governance for autonomous AI agents — policy enforcement, plan-bound monitoring, and human approval all in one place."
+        description="Pre-trade controls for your trading agents: every order checked, every decision on the record, and a human on anything large."
         badge={<LiveIndicator live={streamConnected} />}
       />
 
@@ -224,7 +224,7 @@ export function HomePage() {
         {liveEvents.length === 0 ? (
           <EmptyState
             title="No decisions yet"
-            description="Once an agent calls Spine, decisions stream here in real time. Connect Claude Code or any of the SDKs to get started."
+            description="Once an agent's orders go through Spine, decisions stream here in real time. Put the C++ gate on your order path, or use any of the SDKs."
             action={
               <Link
                 to="/guide"

@@ -83,7 +83,7 @@ export function ApprovalsPage() {
     <div className="space-y-8">
       <PageHeader
         title="Approvals"
-        description="Allow or block flagged actions. Allow grants a one-hour window for the agent to retry the same tool call."
+        description="Four-eyes sign-off on flagged orders. Allow grants a one-hour window for the agent to resend the same order."
         badge={<LiveIndicator live={streamConnected} />}
         actions={
           <Button variant="secondary" size="sm" onClick={() => void load()}>

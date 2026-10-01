@@ -24,8 +24,8 @@ type InterceptResponse = {
 
 export function InterceptPage() {
   const [agentId, setAgentId] = useState("");
-  const [actionType, setActionType] = useState("read");
-  const [target, setTarget] = useState("/patient-records/123");
+  const [actionType, setActionType] = useState("order.place");
+  const [target, setTarget] = useState("AAPL");
   const [result, setResult] = useState<InterceptResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -59,14 +59,14 @@ export function InterceptPage() {
     <div className="space-y-8">
       <PageHeader
         title="Intercept"
-        description="Evaluate a proposed agent action against your policies. Uses your session credentials server-side."
+        description="Ask what Spine would answer for an order before an agent sends one. Uses your session credentials server-side, and records the decision like any other."
       />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader
             title="Evaluate action"
-            subtitle="Simulate what happens when an agent requests access."
+            subtitle="Try order.place on a restricted symbol, or order.place.large to see four-eyes."
           />
           <CardBody>
             <form onSubmit={onSubmit} className="space-y-4">

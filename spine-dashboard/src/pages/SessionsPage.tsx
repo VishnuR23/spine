@@ -191,7 +191,7 @@ export function SessionsPage() {
     <div className="space-y-8">
       <PageHeader
         title="Sessions"
-        description="Plan-bound agent task sessions. Every intercept carrying a session_id is reviewed against the declared plan; cumulative drift across actions can block future intercepts."
+        description="Trading mandates. Every order carrying a session_id is reviewed against the mandate the agent declared; drift that accumulates across orders blocks the session's further orders."
         badge={streamLive ? <LiveIndicator live /> : null}
         actions={
           <Button onClick={() => setShowForm((v) => !v)}>
@@ -206,7 +206,7 @@ export function SessionsPage() {
         <Card>
           <CardHeader
             title="Declare a plan-bound session"
-            subtitle="The reviewer will compare every action against this plan. Constraints and expected resources are advisory hints the reviewer reads alongside the goal."
+            subtitle="The reviewer compares every order against this mandate. Constraints and expected names are hints it reads alongside the goal."
           />
           <CardBody>
             {createError ? (
@@ -233,7 +233,7 @@ export function SessionsPage() {
                 <Textarea
                   value={createGoal}
                   onChange={(e) => setCreateGoal(e.target.value)}
-                  placeholder="Refactor the auth module to use JWT instead of session cookies"
+                  placeholder="Rebalance the US equity book toward the published target weights"
                   required
                   rows={3}
                 />
@@ -245,7 +245,7 @@ export function SessionsPage() {
                 <Textarea
                   value={createConstraints}
                   onChange={(e) => setCreateConstraints(e.target.value)}
-                  placeholder={"only touch /src/auth/**\nno schema changes\nno external network calls"}
+                  placeholder={"only trade names already held in the book\nno single order above 1M without approval\nno trading outside regular hours"}
                   rows={3}
                 />
               </Field>
@@ -256,7 +256,7 @@ export function SessionsPage() {
                 <Textarea
                   value={createExpected}
                   onChange={(e) => setCreateExpected(e.target.value)}
-                  placeholder={"/src/auth/*.ts\n/tests/auth/*.test.ts"}
+                  placeholder={"AAPL\nMSFT\nNVDA"}
                   rows={2}
                 />
               </Field>
@@ -264,7 +264,7 @@ export function SessionsPage() {
                 <Input
                   value={createSuccess}
                   onChange={(e) => setCreateSuccess(e.target.value)}
-                  placeholder="all auth tests pass, no other tests break"
+                  placeholder="book weights within 50bps of target, no restricted names touched"
                 />
               </Field>
               <div className="flex gap-2">
@@ -348,7 +348,7 @@ export function SessionsPage() {
         ) : sessions.length === 0 ? (
           <EmptyState
             title="No sessions yet"
-            description="Create one above, or use /spine-session-start in Claude Code to declare a plan from the developer side."
+            description="Declare a mandate above, or open a session from your trading agent before its first order."
             action={<Button onClick={() => setShowForm(true)}>New session</Button>}
           />
         ) : (

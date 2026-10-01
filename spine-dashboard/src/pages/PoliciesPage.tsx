@@ -28,16 +28,16 @@ type Policy = {
 };
 
 const defaultRule = `{
-  "effect": "allow",
-  "action_types": ["read"],
-  "target_resource_regex": "^/patient-records/.*"
+  "effect": "deny",
+  "action_types": ["order.place", "order.place.large", "order.amend"],
+  "target_resource_regex": "^(RSTR|ACME)$"
 }`;
 
 export function PoliciesPage() {
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [name, setName] = useState("Allow patient record reads");
+  const [name, setName] = useState("Restricted list: no orders in restricted names");
   const [ruleType, setRuleType] = useState("action");
   const [agentId, setAgentId] = useState("");
   const [ruleJson, setRuleJson] = useState(defaultRule);
@@ -88,7 +88,7 @@ export function PoliciesPage() {
     <div className="space-y-8">
       <PageHeader
         title="Policies"
-        description="Default-deny governance rules. Deactivate a policy to remove it from intercept without deleting history."
+        description="Pre-trade rules: restricted lists, notional bands, trading hours, entitlements. Default-deny — an order no policy allows is refused. Deactivate a policy to stop enforcing it without deleting history."
       />
 
       <Card>
@@ -136,7 +136,7 @@ export function PoliciesPage() {
             <Spinner className="h-6 w-6" />
           </div>
         ) : policies.length === 0 ? (
-          <EmptyState title="No policies" description="Create your first policy to start allowing agent actions." />
+          <EmptyState title="No policies" description="Create your first policy. Until one allows it, every order is refused." />
         ) : (
           <ul className="divide-y divide-spine-border">
             {policies.map((p) => (
