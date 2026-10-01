@@ -1,8 +1,10 @@
-"""One-command demo setup.
+"""One-command demo setup: a trading desk.
 
-Creates everything you need to see Spine working: an org, an API key, a
-registered agent, a small set of illustrative policies, and a dashboard
-login. Prints the credentials at the end.
+Creates an org, an API key, a trading agent, the finance policy pack
+(restricted list, notional bands with four-eyes approval, entitlements,
+always-allowed cancels), the agent's declared trading mandate, and a
+dashboard login. Prints the credentials and the exports the C++ pre-trade
+gate needs.
 
 Run it inside the API container (that is what `make demo` does):
 
@@ -14,6 +16,7 @@ Safe to re-run — it creates a fresh org each time.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import os
 import sys
 import uuid
@@ -33,36 +36,23 @@ DEMO_EMAIL = os.getenv("SPINE_DEMO_EMAIL", "demo@spine.dev")
 DEMO_PASSWORD = os.getenv("SPINE_DEMO_PASSWORD", "spine12345")
 DEMO_NAME = "Demo Admin"
 
-# Three policies chosen to show all three effects. Read the rule_config —
-# that is the entire policy language, there is nothing hidden behind it.
-DEMO_POLICIES = [
-    {
-        "name": "Allow reads under /data",
-        "rule_type": "action",
-        "rule_config": {
-            "effect": "allow",
-            "action_types": ["read"],
-            "target_resource_regex": r"^/data/.*",
-        },
-    },
-    {
-        "name": "Flag shell commands for review",
-        "rule_type": "action",
-        "rule_config": {
-            "effect": "flag",
-            "action_types": ["shell"],
-        },
-    },
-    {
-        "name": "Deny writes to system paths",
-        "rule_type": "action",
-        "rule_config": {
-            "effect": "deny",
-            "action_types": ["write", "delete"],
-            "target_resource_regex": r"^/(etc|usr|bin|var)/.*",
-        },
-    },
-]
+
+def _load_finance_pack():
+    # examples/ is not a package; load the pack by path so the demo and the
+    # standalone example script share one definition of the desk's rules.
+    path = Path(__file__).resolve().parents[1] / "examples" / "finance" / "seed_finance_policies.py"
+    spec = importlib.util.spec_from_file_location("seed_finance_policies", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_PACK = _load_finance_pack()
+
+# Open around the clock, so the demo behaves the same outside market hours.
+# The standalone example script seeds the real 13:30-20:00 UTC window.
+DEMO_POLICIES = _PACK.policies(always_open=True)
+DEMO_MANDATE = _PACK.MANDATE
 
 
 async def _wait_for_api(client: httpx.AsyncClient, *, attempts: int = 60) -> None:
@@ -92,7 +82,7 @@ async def main() -> None:
     async with httpx.AsyncClient() as client:
         await _wait_for_api(client)
 
-        org = await _post(client, "/v1/orgs", headers=admin, json={"name": "demo-org", "plan": "starter"})
+        org = await _post(client, "/v1/orgs", headers=admin, json={"name": "demo-desk", "plan": "starter"})
         org_id = str(org["id"])
 
         key = await _post(client, f"/v1/orgs/{org_id}/api-keys", headers=admin, json={"name": "quickstart"})
@@ -103,12 +93,20 @@ async def main() -> None:
             client,
             "/v1/agents/register",
             headers=org_headers,
-            json={"name": "demo-agent", "framework": "generic"},
+            json={"name": "rebalancer", "framework": "generic"},
         )
         agent_id = str(agent["id"])
 
         for policy in DEMO_POLICIES:
             await _post(client, "/v1/policies", headers=org_headers, json={**policy, "agent_id": None})
+
+        session = await _post(
+            client,
+            "/v1/sessions",
+            headers=org_headers,
+            json={"agent_id": agent_id, **DEMO_MANDATE},
+        )
+        session_id = str(session["id"])
 
     await create_user(
         DB_URL,
@@ -121,9 +119,9 @@ async def main() -> None:
 
     print(
         f"""
-{"=" * 68}
-  Spine is ready.
-{"=" * 68}
+{"=" * 70}
+  Spine is ready: a demo trading desk.
+{"=" * 70}
 
   Dashboard   http://localhost:4173
   Email       {DEMO_EMAIL}
@@ -132,25 +130,32 @@ async def main() -> None:
   API         http://localhost:8000
   API docs    http://localhost:8000/docs
 
-  Seeded {len(DEMO_POLICIES)} policies: allow reads under /data, flag shell
-  commands for human approval, deny writes to system paths. Everything
-  else is denied by default — Spine has no implicit allow.
+  Seeded {len(DEMO_POLICIES)} policies: restricted list {_PACK.RESTRICTED}, orders
+  and amends above 1M need four-eyes sign-off, above 10M are refused,
+  unpriced orders go to review, cancels always go through, and two
+  market-data feeds are entitled. Everything else is denied by default.
+  The trading window is open 24h for the demo.
 
-  Try an intercept the policies allow:
+  The agent's mandate is session {session_id}:
+    "{DEMO_MANDATE["goal"]}"
+
+  Send orders through the C++ pre-trade gate:
+
+    export SPINE_ORG_KEY={org_key}
+    export SPINE_AGENT_ID={agent_id}
+    export SPINE_SESSION_ID={session_id}
+    cmake -S sdks/cpp -B sdks/cpp/build && cmake --build sdks/cpp/build
+    ./sdks/cpp/build/pretrade_gate
+
+  Or ask directly. This order is allowed; swap AAPL for RSTR and it is
+  refused by the restricted list, and both answers are recorded:
 
     curl -sS -X POST http://localhost:8000/v1/intercept \\
       -H "Content-Type: application/json" \\
       -H "X-Org-Key: {org_key}" \\
       -d '{{"agent_id":"{agent_id}",
-           "action":{{"action_type":"read","target_resource":"/data/report.csv"}}}}'
-
-  Then try one they don't (swap the target for /etc/passwd) and watch it
-  get blocked and recorded.
-
-  Saved for later use:
-    export SPINE_ORG_KEY={org_key}
-    export SPINE_AGENT_ID={agent_id}
-{"=" * 68}
+           "action":{{"action_type":"order.place","target_resource":"AAPL"}}}}'
+{"=" * 70}
 """
     )
 
