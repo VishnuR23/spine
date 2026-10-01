@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `spine.plan.review_failed` webhook, sent when the plan reviewer fails
+  closed and hands an action to a human. See the Webhooks section of
+  `docs/API.md`.
 - C++ SDK (`sdks/cpp`) for latency-sensitive callers, depending only on
   libcurl and the standard library. Hard latency budget per call, fail-closed
   by default, and `OrderGate` for pre-trade checks.
