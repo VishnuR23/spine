@@ -117,6 +117,14 @@ public:
     Result check_amend(const Order& original, const Order& amended,
                        const std::string& session_id = "") const;
 
+    // Cancelling reduces risk, so this one does not fail closed. Spine is
+    // asked as usual and a real verdict stands, including a deliberate
+    // block. But if the answer would be produced locally -- Spine
+    // unreachable, budget exceeded, breaker open, halted -- the cancel is
+    // allowed, with failed_closed set and the reason prefixed
+    // "cancel allowed locally: ". Refusing a cancel keeps the position on.
+    Result check_cancel(const Order& order, const std::string& session_id = "") const;
+
     // Market data carries licensing obligations that differ per feed, and
     // entitlement is exactly the kind of rule that belongs in central policy
     // rather than in each consumer.

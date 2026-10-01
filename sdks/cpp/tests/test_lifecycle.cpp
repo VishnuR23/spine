@@ -119,6 +119,42 @@ void test_amend_fails_closed_like_a_new_order() {
     check(!r.allowed && r.failed_closed, "an amend that cannot reach Spine is refused");
 }
 
+void test_cancel_is_allowed_when_spine_is_unreachable() {
+    spine::Config cfg;
+    cfg.base_url = "http://127.0.0.1:1";
+    cfg.org_key = "spine_test_key";
+    cfg.timeout = std::chrono::milliseconds(250);
+    OrderGate gate(spine::Client(cfg), "agent-1");
+    const auto r = gate.check_cancel(base_order());
+    check(r.allowed, "a cancel goes through when Spine is unreachable");
+    check(r.failed_closed, "but is marked as decided locally");
+    check(r.reason.rfind("cancel allowed locally: ", 0) == 0, "with a reason that says so");
+}
+
+void test_cancel_passes_a_halt_but_orders_do_not() {
+    spine_test::FakeSpine server;
+    OrderGate gate(spine::Client(cfg_for(server)), "agent-1");
+    gate.client().halt("risk breach");
+    check(!gate.check(base_order()).allowed, "a halt stops new orders");
+    const auto cancel = gate.check_cancel(base_order());
+    check(cancel.allowed, "a halt does not stop cancels");
+    check_eq(cancel.reason, "cancel allowed locally: halted: risk breach", "and says why");
+    check(server.requests() == 0, "neither made a network call during the halt");
+}
+
+void test_cancel_sends_its_facts_and_respects_a_real_block() {
+    spine_test::FakeSpine server;
+    OrderGate gate(spine::Client(cfg_for(server)), "agent-1");
+    gate.check_cancel(base_order());
+    const std::string body = server.last_body();
+    check(has(body, "\"action_type\":\"order.cancel\""), "a cancel is order.cancel");
+    check(has(body, "\"client_order_id\":\"co-1\""), "and names the order it cancels");
+
+    server.respond(200, spine_test::kBlocked);
+    const auto r = gate.check_cancel(base_order());
+    check(!r.allowed && !r.failed_closed, "a deliberate block of a cancel by policy stands");
+}
+
 }  // namespace
 
 void run_lifecycle_tests() {
@@ -130,4 +166,7 @@ void run_lifecycle_tests() {
     test_check_sends_full_order_metadata();
     test_amend_bands_on_the_new_size();
     test_amend_fails_closed_like_a_new_order();
+    test_cancel_is_allowed_when_spine_is_unreachable();
+    test_cancel_passes_a_halt_but_orders_do_not();
+    test_cancel_sends_its_facts_and_respects_a_real_block();
 }

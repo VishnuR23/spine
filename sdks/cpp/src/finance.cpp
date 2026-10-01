@@ -121,6 +121,24 @@ Result OrderGate::check_amend(const Order& original, const Order& amended,
     return client_.intercept(action);
 }
 
+Result OrderGate::check_cancel(const Order& order, const std::string& session_id) const {
+    Action action;
+    action.agent_id = agent_id_;
+    action.action_type = "order.cancel";
+    action.target_resource = order.symbol;
+    action.session_id = session_id;
+    action.metadata = {
+        {"client_order_id", order.client_order_id},
+        {"side", to_string(order.side)},
+        {"quantity", std::to_string(order.quantity)},
+        {"strategy_id", order.strategy_id},
+        {"trader_id", order.trader_id},
+    };
+    Result r = client_.intercept_risk_reducing(action);
+    if (r.failed_closed) r.reason = "cancel allowed locally: " + r.reason;
+    return r;
+}
+
 Result OrderGate::check_market_data(const std::string& feed,
                                     const std::string& session_id) const {
     Action action;
