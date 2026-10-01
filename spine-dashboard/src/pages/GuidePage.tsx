@@ -10,7 +10,7 @@ export function GuidePage() {
     <div className="space-y-8">
       <PageHeader
         title="Getting started"
-        description="Connect your autonomous agents to Spine in under five minutes. Spine governs every action your agents take — policy, plan-bound monitoring, and human approval, all in one place."
+        description="Put a trading agent behind pre-trade controls in under five minutes. Spine checks every order, amend, and cancel against your policies, reviews the agent against its mandate, and keeps a record you can prove."
       />
 
       <div className="space-y-6">
@@ -45,43 +45,48 @@ export function GuidePage() {
         />
         <Step
           number={3}
-          title="Author your governance policies"
+          title="Set your pre-trade policies"
           content={
             <>
-              Spine is <strong className="text-spine-fg">default-deny</strong>. Define
-              your guardrails on{" "}
+              Spine is <strong className="text-spine-fg">default-deny</strong>: an order no
+              policy allows is refused. On{" "}
               <Link to="/policies" className="text-spine-accent hover:underline">
                 Policies
-              </Link>{" "}
-              — each rule has an allow, deny, or flag effect against a set of action types
-              and resource patterns. Unless an active allow-policy matches, the action is
-              blocked.
+              </Link>
+              , each rule allows, denies, or flags a set of action types and symbols —
+              a restricted list is a deny on a symbol pattern, four-eyes review is a flag on{" "}
+              <code className="code-inline">order.place.large</code>, trading hours are a
+              time window. The finance pack in{" "}
+              <code className="code-inline">examples/finance</code> seeds a full desk.
             </>
           }
         />
         <Step
           number={4}
-          title="Connect Claude Code"
+          title="Put the gate on the order path"
           content={
             <>
-              Run the one-line installer at{" "}
-              <code className="code-inline">integrations/claude-code-spine/install.sh</code>
-              {" "}on any developer machine. The hook intercepts every tool call before it
-              runs and routes the decision through Spine. For Python, TypeScript, or
-              custom agents, use the SDKs in{" "}
-              <code className="code-inline">sdks/</code>.
+              Link the C++ client in{" "}
+              <code className="code-inline">sdks/cpp</code> into your order management or
+              execution stack and call{" "}
+              <code className="code-inline">OrderGate::check</code> before each order is
+              sent. It sizes the order, asks Spine within a hard latency budget, and refuses
+              the order if Spine cannot answer. For Python or TypeScript agents, use the SDKs
+              in <code className="code-inline">sdks/</code>; for Claude Code, run{" "}
+              <code className="code-inline">integrations/claude-code-spine/install.sh</code>.
             </>
           }
         />
         <Step
           number={5}
-          title="Declare a plan-bound session"
+          title="Declare the trading mandate"
           content={
             <>
-              For each meaningful agent task, the runtime registers a goal and constraints
-              with Spine. A context-isolated reviewer compares every action against that
-              plan and accumulates a drift score; sessions that drift past your threshold
-              are blocked automatically. Sessions are visible on the{" "}
+              Before it trades, the agent opens a session with its mandate: the goal,
+              constraints, and the names it expects to trade. A context-isolated reviewer
+              scores every order against that mandate and accumulates a drift score; a
+              session that drifts past your threshold is blocked automatically. Sessions are
+              visible on the{" "}
               <Link to="/sessions" className="text-spine-accent hover:underline">
                 Sessions
               </Link>{" "}
@@ -98,7 +103,7 @@ export function GuidePage() {
               <Link to="/audit" className="text-spine-accent hover:underline">
                 Audit log
               </Link>{" "}
-              as a tamper-evident chain. Flagged actions appear in{" "}
+              as a tamper-evident chain. Orders waiting for four-eyes sign-off appear in{" "}
               <Link to="/approvals" className="text-spine-accent hover:underline">
                 Approvals
               </Link>{" "}
@@ -124,8 +129,12 @@ export function GuidePage() {
     "agent_id": "AGENT_UUID",
     "session_id": "SESSION_UUID",
     "action": {
-      "action_type": "read",
-      "target_resource": "/src/auth/login.ts"
+      "action_type": "order.place",
+      "target_resource": "AAPL",
+      "metadata": {
+        "side": "BUY", "quantity": "100",
+        "limit_price": "150.00", "notional": "15000.00"
+      }
     }
   }'`}
           </pre>
