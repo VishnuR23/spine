@@ -141,7 +141,7 @@ The rule is fail-closed by default, fail-open only by explicit opt-in.
 
 | Failure | Behavior |
 |---|---|
-| Redis down | Policy reads fall through to Postgres; SSE stops; Celery tasks queue and drain on recovery. No data lost. |
+| Redis down or unreachable | Order checks stay fast: hot-path Redis calls time out at 50 ms, then Redis is skipped for 5 s. Policy reads fall through to Postgres; SSE stops; reviews for orders checked meanwhile are skipped, since the queue is Redis. No audit data lost. |
 | Worker down | Intercepts continue. Plan evaluations queue up. |
 | Model returns garbage, refuses, or errors | The task retries three times with backoff (1s, 2s, 4s). If every attempt fails, it opens a pending approval for the action and writes a `plan.evaluation_failed` row (decision `flagged`) to the audit chain, and fires a `spine.plan.review_failed` webhook. The drift score is unchanged, since there was no verdict. |
 | Spine unreachable | The Claude Code hook blocks the tool call rather than allowing it. |

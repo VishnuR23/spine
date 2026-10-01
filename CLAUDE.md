@@ -185,10 +185,22 @@ job has a key namespace prefix (`spine:policies:*`, Celery's own keys,
 
 Every cache + queue + pub/sub path is wrapped to fail-safe. Policy reads fall
 through to Postgres. Webhook delivery still works (it uses httpx, not Redis).
-SSE stops working (the dashboard shows the live indicator going grey). Celery
-tasks queue up; when Redis comes back, they drain. **The system gets slower
-and loses live updates, but no permanent data is lost.** Preserve that
-property — never make any feature *require* Redis to be up.
+SSE stops working (the dashboard shows the live indicator going grey). The
+reviewer's queue *is* Redis, so reviews for orders checked while it is down
+are skipped, not queued — the enqueue fails and is logged. **Order checks keep
+working at normal speed, and no audit data is lost.** Preserve that property —
+never make any feature *require* Redis to be up.
+
+Keeping order checks at normal speed is not automatic. Every Redis call on the
+intercept path goes through `spine/core/redis_guard.py`: a 50 ms timeout
+(`REDIS_HOT_PATH_TIMEOUT_MS`), no retries, and after one failure Redis is
+skipped for `REDIS_RETRY_AFTER_SECONDS`. Before that, a refused connection
+cost ~650 ms (Celery's publish retries) and an unreachable host hung the
+policy read on the OS connect timeout — either way every order failed closed
+at the C++ gate's 50 ms budget. **Any new Redis call on the intercept path
+must use the guard.** Admin-path calls (policy cache invalidation) must not:
+a skipped invalidation leaves a newly restricted symbol unenforced until the
+cache TTL.
 
 ### httpx async client is module-level
 
@@ -325,7 +337,7 @@ docker compose down -v                   # DESTROY data (use carefully)
 cd deploy/vps && docker compose up -d --build
 
 # Backend tests (must run from repo root)
-pytest -v                                # full suite (120 tests as of writing)
+pytest -v                                # full suite (126 tests as of writing; 3 need a live Redis)
 pytest tests/test_plan_engine.py -v      # one file
 pytest -k plan                           # any test whose name contains "plan"
 
@@ -378,6 +390,10 @@ MONITOR_MODEL              # plan reviewer model (default claude-sonnet-5-5)
 # Toggles
 SSE_ENABLED=true           # live dashboard updates
 BLOCK_WEBHOOK_PRIVATE_URLS=true  # SSRF guard
+
+# Redis on the intercept path
+REDIS_HOT_PATH_TIMEOUT_MS=50     # connect/read timeout for cache, publish, enqueue
+REDIS_RETRY_AFTER_SECONDS=5      # skip Redis this long after a hot-path failure
 
 # Thresholds
 PLAN_DRIFT_FLAG_THRESHOLD=0.4    # opens approval ticket
@@ -437,7 +453,7 @@ WEBHOOK_TIMEOUT_SECONDS=2.0
 
 | Suite | Command | Count (current) |
 |---|---|---|
-| Backend | `pytest -v` | 120 |
+| Backend | `pytest -v` | 126 |
 | Claude Code hook | `cd integrations/claude-code-spine && python3 -m pytest tests/` | 14 |
 | Full E2E smoke | `bash tools/smoke_plan_bound.sh` | One run, ~30s |
 | Dashboard typecheck | `cd spine-dashboard && npx tsc --noEmit` | Should be clean |

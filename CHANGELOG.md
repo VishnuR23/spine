@@ -62,6 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Order checks stalled when Redis was down. With Redis refusing connections,
+  a session-bound intercept took ~650 ms (Celery's publish retries, run
+  inside the request); with Redis unreachable, the policy cache read had no
+  connect timeout and hung. Either exceeded the C++ gate's 50 ms budget, so
+  every order failed closed. Hot-path Redis calls now time out at 50 ms, do
+  not retry, and skip Redis for 5 s after a failure
+  (`REDIS_HOT_PATH_TIMEOUT_MS`, `REDIS_RETRY_AFTER_SECONDS`).
 - Tests could not be collected under a plain `pytest` invocation, because the
   repository root was not on `sys.path`. Only `python -m pytest` worked.
 - Alembic revision `0013` used a 38-character identifier, exceeding the
