@@ -1,6 +1,7 @@
 // Order lifecycle: pricing, amends, cancels.
 
 #include <chrono>
+#include <cmath>
 #include <string>
 
 #include "check.hpp"
@@ -155,6 +156,28 @@ void test_cancel_sends_its_facts_and_respects_a_real_block() {
     check(!r.allowed && !r.failed_closed, "a deliberate block of a cancel by policy stands");
 }
 
+void test_bad_collar_does_not_make_a_market_order_small() {
+    Order o = base_order();
+    o.limit_price = 0.0;
+    o.reference_price = 200.0;
+    o.quantity = 1000000;  // 200M at the reference
+
+    NotionalBands zero;
+    zero.market_collar = 0.0;
+    check_eq(action_type_for(o, zero), "order.place.unpriced",
+             "a zero collar routes for review instead of sizing the order at 0");
+
+    NotionalBands nan;
+    nan.market_collar = std::nan("");
+    check_eq(action_type_for(o, nan), "order.place.unpriced",
+             "a NaN collar routes for review instead of slipping under every band");
+
+    NotionalBands negative;
+    negative.market_collar = -1.05;
+    check_eq(action_type_for(o, negative), "order.place.unpriced",
+             "a negative collar routes for review");
+}
+
 }  // namespace
 
 void run_lifecycle_tests() {
@@ -163,6 +186,7 @@ void run_lifecycle_tests() {
     test_limit_price_wins_over_reference();
     test_unpriced_without_reference_is_unchanged();
     test_prefix_overload();
+    test_bad_collar_does_not_make_a_market_order_small();
     test_check_sends_full_order_metadata();
     test_amend_bands_on_the_new_size();
     test_amend_fails_closed_like_a_new_order();

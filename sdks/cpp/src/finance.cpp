@@ -1,5 +1,6 @@
 #include "spine/finance.hpp"
 
+#include <cmath>
 #include <cstdio>
 #include <utility>
 #include <vector>
@@ -44,6 +45,10 @@ std::string action_type_for(const std::string& prefix, const Order& o,
     // would let a market order become the cheapest way past a control.
     if (pricing_of(o) == Pricing::Unpriced) return prefix + ".unpriced";
     const double value = notional(o, bands);
+    // A notional that is not a positive number -- a zero, negative, or NaN
+    // collar, or a nonsensical quantity -- fails every band comparison and
+    // would land in the cheapest band. Treat it as unknown instead.
+    if (!std::isfinite(value) || value <= 0.0) return prefix + ".unpriced";
     if (value >= bands.refuse_at) return prefix + ".block";
     if (value >= bands.review_at) return prefix + ".large";
     return prefix;
