@@ -322,7 +322,7 @@ docker compose down -v                   # DESTROY data (use carefully)
 cd deploy/vps && docker compose up -d --build
 
 # Backend tests (must run from repo root)
-pytest -v                                # full suite (87 tests as of writing)
+pytest -v                                # full suite (105 tests as of writing)
 pytest tests/test_plan_engine.py -v      # one file
 pytest -k plan                           # any test whose name contains "plan"
 
@@ -434,7 +434,7 @@ WEBHOOK_TIMEOUT_SECONDS=2.0
 
 | Suite | Command | Count (current) |
 |---|---|---|
-| Backend | `pytest -v` | 87 |
+| Backend | `pytest -v` | 105 |
 | Claude Code hook | `cd integrations/claude-code-spine && python3 -m pytest tests/` | 14 |
 | Full E2E smoke | `bash tools/smoke_plan_bound.sh` | One run, ~30s |
 | Dashboard typecheck | `cd spine-dashboard && npx tsc --noEmit` | Should be clean |
