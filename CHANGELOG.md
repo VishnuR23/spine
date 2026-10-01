@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Spine is now positioned finance-first: pre-trade controls and a provable
+  audit trail for AI trading agents. The README, landing page, dashboard
+  wording, and docs lead with the trading use case; the core stays
+  domain-neutral, and a "Works for any agent" section covers the rest.
+- `make demo` now seeds a trading desk — the finance policy pack (open 24h)
+  and a declared trading mandate — instead of generic file and shell rules,
+  and prints the exports the C++ pre-trade gate needs. The API image now
+  includes `examples/`.
 - The plan reviewer now fails closed. When every retry of a review fails
   (bad JSON, a refusal, or an API error), the worker opens a pending
   approval for the action and writes a `plan.evaluation_failed` audit row,
