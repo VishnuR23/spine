@@ -10,22 +10,46 @@ const char* to_string(Side s) {
     return s == Side::Buy ? "BUY" : "SELL";
 }
 
-double notional(const Order& o) {
-    if (o.limit_price <= 0.0) return 0.0;  // unpriced; see action_type_for
-    return static_cast<double>(o.quantity) * o.limit_price;
+const char* to_string(Pricing p) {
+    switch (p) {
+        case Pricing::Limit: return "limit";
+        case Pricing::Reference: return "reference";
+        case Pricing::Unpriced: break;
+    }
+    return "unpriced";
+}
+
+Pricing pricing_of(const Order& o) {
+    if (o.limit_price > 0.0) return Pricing::Limit;
+    if (o.reference_price > 0.0) return Pricing::Reference;
+    return Pricing::Unpriced;
+}
+
+double notional(const Order& o, const NotionalBands& bands) {
+    const double qty = static_cast<double>(o.quantity);
+    switch (pricing_of(o)) {
+        case Pricing::Limit: return qty * o.limit_price;
+        case Pricing::Reference: return qty * o.reference_price * bands.market_collar;
+        case Pricing::Unpriced: break;
+    }
+    return 0.0;
+}
+
+double notional(const Order& o) { return notional(o, NotionalBands{}); }
+
+std::string action_type_for(const std::string& prefix, const Order& o,
+                            const NotionalBands& bands) {
+    // Unknown notional must not silently mean "small": treating it as zero
+    // would let a market order become the cheapest way past a control.
+    if (pricing_of(o) == Pricing::Unpriced) return prefix + ".unpriced";
+    const double value = notional(o, bands);
+    if (value >= bands.refuse_at) return prefix + ".block";
+    if (value >= bands.review_at) return prefix + ".large";
+    return prefix;
 }
 
 std::string action_type_for(const Order& o, const NotionalBands& bands) {
-    if (o.limit_price <= 0.0) {
-        // An order with no limit price has unbounded notional. Treating it as
-        // zero would let it slip under every band — the failure mode where a
-        // market order becomes the cheapest way past a control.
-        return "order.place.unpriced";
-    }
-    const double value = notional(o);
-    if (value >= bands.refuse_at) return "order.place.block";
-    if (value >= bands.review_at) return "order.place.large";
-    return "order.place";
+    return action_type_for("order.place", o, bands);
 }
 
 namespace {

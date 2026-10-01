@@ -44,12 +44,17 @@ struct Order {
     std::string venue;
     std::string strategy_id;
     std::string trader_id;    // the human accountable for the mandate
+
+    // Your own order identifier, so amends and cancels can be tied back to
+    // the order in the audit trail.
+    std::string client_order_id;
+
+    // For market orders: the price you would mark this at (last trade, mid).
+    // With it, a market order is sized like a limit order, plus the collar.
+    // You own its freshness; a stale reference is a wrong notional.
+    double reference_price = 0.0;
 };
 
-// quantity × limit_price. Market orders have no limit price, so their
-// notional is unknown here and reported as 0 — see action_type_for for how
-// that is handled, because "unknown" must not silently mean "small".
-double notional(const Order& o);
 
 // Thresholds, in the account's currency. Defaults are illustrative; set them
 // from your own risk appetite.
@@ -61,11 +66,35 @@ struct NotionalBands {
 
     // At or above this, do not ask — refuse. Maps to order.place.block.
     double refuse_at = 10'000'000.0;
+
+    // Market orders priced off a reference are marked up by this factor, to
+    // cover slippage between the reference and the fill.
+    double market_collar = 1.05;
 };
 
-// Selects the action type for an order. Market orders (no limit price) are
-// treated as unpriced and routed to order.place.unpriced rather than assumed
-// cheap: an unbounded order is exactly the one you want a human to see.
+enum class Pricing { Limit, Reference, Unpriced };
+
+const char* to_string(Pricing p);
+
+// Limit if there is a limit price; Reference if only a reference price;
+// otherwise Unpriced.
+Pricing pricing_of(const Order& o);
+
+// Notional under these bands' collar. 0 when Unpriced -- see action_type_for
+// for how that is handled, because "unknown" must not silently mean "small".
+double notional(const Order& o, const NotionalBands& bands);
+
+// The same, under default bands.
+double notional(const Order& o);
+
+// Band selection under any action-type prefix: prefix, prefix.large,
+// prefix.block, prefix.unpriced.
+std::string action_type_for(const std::string& prefix, const Order& o,
+                            const NotionalBands& bands);
+
+// Selects the action type for a new order: action_type_for("order.place",
+// ...). Unpriced orders route to order.place.unpriced rather than being
+// assumed cheap: an unbounded order is exactly the one a human should see.
 std::string action_type_for(const Order& o, const NotionalBands& bands);
 
 // Wraps a Client with order-shaped calls.
