@@ -2,6 +2,7 @@
 // stats, circuit breaker, manual halt.
 
 #include <chrono>
+#include <cstdint>
 #include <string>
 #include <thread>
 #include <vector>
@@ -92,6 +93,50 @@ void test_timeout_then_recovery() {
     check(!next.failed_closed && next.allowed, "the next call after a timeout gets a real verdict");
 }
 
+std::uint64_t bucket_total(const spine::Stats& s) {
+    std::uint64_t n = 0;
+    for (auto b : s.latency_buckets) n += b;
+    return n;
+}
+
+void test_stats_count_decisions_and_latency() {
+    FakeSpine server;
+    const spine::Client client(config_for(server));
+    client.intercept(read_action());
+    client.intercept(read_action());
+    server.respond(200, spine_test::kBlocked);
+    client.intercept(read_action());
+    server.respond(200, spine_test::kFlagged);
+    client.intercept(read_action());
+    server.respond(500, "{}");
+    client.intercept(read_action());
+
+    const spine::Stats s = client.stats();
+    check(s.allowed == 2, "two allowed");
+    check(s.blocked == 2, "two blocked (one by policy, one failed closed)");
+    check(s.flagged == 1, "one flagged");
+    check(s.failed_closed == 1, "the HTTP 500 counts as failed closed");
+    check(s.short_circuited == 0, "nothing short-circuited");
+    check(bucket_total(s) == 5, "every network call lands in a latency bucket");
+    check(s.max_latency.count() > 0, "max latency is recorded");
+}
+
+void test_stats_are_exact_under_concurrency() {
+    FakeSpine server;
+    const spine::Client client(config_for(server));
+    std::vector<std::thread> threads;
+    for (int t = 0; t < 8; ++t) {
+        threads.emplace_back([&client] {
+            for (int i = 0; i < 25; ++i) client.intercept(read_action());
+        });
+    }
+    for (auto& t : threads) t.join();
+    const spine::Stats s = client.stats();
+    check(s.allowed == 200, "200 concurrent calls from 8 threads are all counted");
+    check(server.requests() == 200, "and all reached the server");
+    check(server.connections() <= 8, "the pool never needs more connections than threads");
+}
+
 }  // namespace
 
 void run_transport_tests() {
@@ -101,4 +146,6 @@ void run_transport_tests() {
     test_copies_share_the_pool();
     test_server_closing_connections_is_harmless();
     test_timeout_then_recovery();
+    test_stats_count_decisions_and_latency();
+    test_stats_are_exact_under_concurrency();
 }

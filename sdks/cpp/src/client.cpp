@@ -2,6 +2,8 @@
 
 #include <curl/curl.h>
 
+#include <array>
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -195,7 +197,9 @@ void ensure_curl_initialised() {
 namespace detail {
 
 struct Shared {
-    explicit Shared(bool reuse_connections) : reuse(reuse_connections) {}
+    explicit Shared(bool reuse_connections) : reuse(reuse_connections) {
+        for (auto& b : buckets) b.store(0);
+    }
     ~Shared() {
         for (CURL* h : pool) curl_easy_cleanup(h);
     }
@@ -227,9 +231,35 @@ struct Shared {
         pool.push_back(h);
     }
 
+    void count(const Result& r) {
+        switch (r.decision) {
+            case Decision::Allowed: ++allowed; break;
+            case Decision::Flagged: ++flagged; break;
+            case Decision::Blocked: ++blocked; break;
+        }
+    }
+
+    void observe(std::chrono::microseconds latency) {
+        const long long us = latency.count();
+        size_t i = 0;
+        while (i < Stats::kBucketUpperMs.size() && us > Stats::kBucketUpperMs[i] * 1000) ++i;
+        ++buckets[i];
+        long long prev = max_latency_us.load();
+        while (us > prev && !max_latency_us.compare_exchange_weak(prev, us)) {
+        }
+    }
+
     const bool reuse;
     std::mutex pool_mu;
     std::vector<CURL*> pool;
+
+    std::atomic<std::uint64_t> allowed{0};
+    std::atomic<std::uint64_t> blocked{0};
+    std::atomic<std::uint64_t> flagged{0};
+    std::atomic<std::uint64_t> failed_closed_n{0};
+    std::atomic<std::uint64_t> short_circuited_n{0};
+    std::array<std::atomic<std::uint64_t>, 8> buckets;
+    std::atomic<long long> max_latency_us{0};
 };
 
 }  // namespace detail
@@ -248,7 +278,23 @@ Result Client::intercept(const Action& action) const {
 
 Result Client::intercept_with_budget(const Action& action,
                                      std::chrono::milliseconds budget) const {
-    return perform(action, budget);
+    Result r = perform(action, budget);
+    if (r.failed_closed) ++shared_->failed_closed_n;
+    shared_->observe(r.latency);
+    shared_->count(r);
+    return r;
+}
+
+Stats Client::stats() const {
+    Stats s;
+    s.allowed = shared_->allowed.load();
+    s.blocked = shared_->blocked.load();
+    s.flagged = shared_->flagged.load();
+    s.failed_closed = shared_->failed_closed_n.load();
+    s.short_circuited = shared_->short_circuited_n.load();
+    for (size_t i = 0; i < s.latency_buckets.size(); ++i) s.latency_buckets[i] = shared_->buckets[i].load();
+    s.max_latency = std::chrono::microseconds(shared_->max_latency_us.load());
+    return s;
 }
 
 Result Client::perform(const Action& action, std::chrono::milliseconds budget) const {

@@ -24,7 +24,9 @@
 #ifndef SPINE_CLIENT_HPP
 #define SPINE_CLIENT_HPP
 
+#include <array>
 #include <chrono>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -55,6 +57,29 @@ struct Result {
 
     // Round-trip time actually observed, for your own latency histograms.
     std::chrono::microseconds latency{0};
+};
+
+// In-process counters, read with Client::stats(). Cheap enough to leave on.
+struct Stats {
+    // Inclusive upper bounds of the latency buckets, in milliseconds.
+    // latency_buckets has one more slot, for anything slower.
+    static constexpr std::array<long long, 7> kBucketUpperMs{{1, 2, 5, 10, 20, 50, 100}};
+
+    // Every call lands in exactly one of these, by its final decision.
+    std::uint64_t allowed = 0;
+    std::uint64_t blocked = 0;
+    std::uint64_t flagged = 0;
+
+    // Went to Spine but the verdict was produced locally (timeout, transport
+    // error, bad response). A rising count means the control is degrading.
+    std::uint64_t failed_closed = 0;
+
+    // Answered locally with no network call: circuit open, or halted.
+    std::uint64_t short_circuited = 0;
+
+    // Network calls only.
+    std::array<std::uint64_t, 8> latency_buckets{};
+    std::chrono::microseconds max_latency{0};
 };
 
 namespace detail {
@@ -121,6 +146,8 @@ public:
                                  std::chrono::milliseconds budget) const;
 
     const Config& config() const { return config_; }
+
+    Stats stats() const;
 
 private:
     Result perform(const Action& action, std::chrono::milliseconds budget) const;
