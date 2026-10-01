@@ -128,14 +128,16 @@ def _next_drift_score(prev: float, contribution: float) -> float:
     return max(0.0, min(1.0, new))
 
 
-def _build_approval_proposed(*, agent_id: uuid.UUID, audit: AuditEvent, alignment: str) -> dict:
+def _build_approval_proposed(
+    *, agent_id: uuid.UUID, audit: AuditEvent, alignment: str, origin: str = "plan_drift"
+) -> dict:
     meta = dict(audit.metadata_ or {})
     spine_meta = meta.setdefault("spine", {})
     if not isinstance(spine_meta, dict):
         spine_meta = {}
         meta["spine"] = spine_meta
     spine_meta["plan_alignment"] = alignment
-    spine_meta["origin"] = "plan_drift"
+    spine_meta["origin"] = origin
     return {
         "agent_id": str(agent_id),
         "action": {
