@@ -9,7 +9,7 @@ provides one).
 
 import asyncio
 import os
-import time
+from types import SimpleNamespace
 
 import pytest
 import redis
@@ -95,7 +95,11 @@ def test_session_order_queues_its_review(client, live_redis):  # noqa: F811
 
 
 def test_redis_is_used_again_after_the_skip_window(client, live_redis, monkeypatch):  # noqa: F811
-    monkeypatch.setattr(settings, "redis_retry_after_seconds", 0.05)
+    # Drive the guard's clock by hand. A real sleep against a short window races
+    # the first read: on a slow runner the window can expire before it runs.
+    now = [1000.0]
+    monkeypatch.setattr(redis_guard, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    monkeypatch.setattr(settings, "redis_retry_after_seconds", 5.0)
     org_id, agent_id, _ = seed_org_and_agent(client)
     _add_allow_read(client, org_id)
 
@@ -103,6 +107,6 @@ def test_redis_is_used_again_after_the_skip_window(client, live_redis, monkeypat
     _read(client, org_id, agent_id)
     assert not live_redis.exists(f"spine:policies:cache:{org_id}"), "skipped while marked down"
 
-    time.sleep(0.1)
+    now[0] += 5.0
     _read(client, org_id, agent_id)
     assert live_redis.exists(f"spine:policies:cache:{org_id}"), "used again once the window passes"
