@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use Spine, please cite it as below."
+title: "Spine"
+abstract: "Pre-trade controls and a provable audit trail for AI agents: deterministic policy enforcement, a tamper-evident audit log, and a mandate reviewer that never reads agent context."
+type: software
+license: Apache-2.0
+repository-code: "https://github.com/VishnuR23/spine"
+authors:
+  - given-names: Vishnu
+    family-names: Rajeev
+  - given-names: Anatole
+    family-names: Seychal

@@ -201,6 +201,7 @@ except SpineBlockedError as e:
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the pieces fit, and why they are arranged this way |
 | [sdks/cpp/README.md](sdks/cpp/README.md) | The C++ pre-trade gate: bands, cancels, breaker, latency |
 | [docs/PLAN_BOUND_MONITORING.md](docs/PLAN_BOUND_MONITORING.md) | The mandate reviewer in depth |
+| [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) | Threat model, assumptions, and the adversarial corpus that tests them |
 | [docs/INTEGRATING_AGENTS.md](docs/INTEGRATING_AGENTS.md) | Connecting agents and frameworks |
 | [docs/API.md](docs/API.md) | Endpoint reference and curl examples |
 | [deploy/vps/README.md](deploy/vps/README.md) | Production deploy on a single VPS |
@@ -262,6 +263,11 @@ the need for notional bands), exchange-local trading calendars, additional
 framework integrations, and adversarial testing of the reviewer.
 
 To report a security issue, see [SECURITY.md](SECURITY.md).
+
+## Authors
+
+Spine is built and maintained by [Vishnu Rajeev](https://github.com/VishnuR23)
+and [Anatole Seychal](https://github.com/anuhtole).
 
 ## License
 
