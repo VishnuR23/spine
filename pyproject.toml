@@ -9,7 +9,7 @@ description = "Pre-trade controls and a provable audit trail for AI trading agen
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
-authors = [{ name = "Vishnu Rajeev" }]
+authors = [{ name = "Vishnu Rajeev" }, { name = "Anatole Seychal" }]
 keywords = ["ai-agents", "trading", "pre-trade-risk", "audit-log", "policy", "prompt-injection", "governance"]
 classifiers = [
     "Development Status :: 3 - Alpha",
